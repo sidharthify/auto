@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 
-DIST_DIR="/home/sidharthify/kernel/out/pantah/dist"
+DIST_DIR="/home/sidharthify/kernel/out/kernel_aarch64/dist"
 KERNEL_BUILD_DIR="/home/sidharthify/kernel/"
 
 cd "${KERNEL_BUILD_DIR}"
-bash build_pantah.sh
+
+tools/bazel run //aosp:kernel_aarch64_dist
 
 cd "${DIST_DIR}"
 zip -r9 kernel.zip \
@@ -23,3 +24,4 @@ bash u.sh kernel.zip
 # clean up
 rm -f u.sh kernel.zip
 echo "cleaned up u.sh and kernel.zip"
+

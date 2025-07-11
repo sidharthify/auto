@@ -2,9 +2,10 @@
 
 set -e
 
-ROOT_DIR="/home/sidharthify/kernel"
+ROOT_DIR=$(pwd)
 KERNEL_DIR="${ROOT_DIR}/aosp"
 OUT_DIR="${ROOT_DIR}/aosp/out"
+export "${OUT_DIR}" # Needed for modules
 LLVM_DIR="${ROOT_DIR}/prebuilts/clang/host/linux-x86/clang-r487747c/bin/"
 MODULES_STAGING_DIR="${OUT_DIR}/modules_staging"
 KERNEL_UAPI_HEADERS_DIR="${OUT_DIR}/headers"
@@ -113,15 +114,15 @@ make -j"$(nproc)" \
   "${MAKE_ARGS[@]}" \
   modules_install
 
+cd "${ROOT_DIR}"
+
 # build external modules
 for EXT_MOD in ${EXT_MODULES}; do
   ABS_EXT_MOD="${ROOT_DIR}/${EXT_MOD}"
   EXT_MOD_REL=$(rel_path "${ABS_EXT_MOD}" "${KERNEL_DIR}")
 
-  mkdir -p "${OUT_DIR}/${EXT_MOD_REL}"
   set -x
-
-  cd "${ROOT_DIR}"
+  mkdir -p "${OUT_DIR}/${EXT_MOD_REL}"
 
   make -C "${ABS_EXT_MOD}" \
   M="${EXT_MOD_REL}" \
@@ -130,8 +131,6 @@ for EXT_MOD in ${EXT_MODULES}; do
   "${TOOL_ARGS[@]}" \
   "${MAKE_ARGS[@]}" \
   modules
-
-  cd "${KERNEL_DIR}"
 
   make -C "${ABS_EXT_MOD}" \
   M="${EXT_MOD_REL}" \

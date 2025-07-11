@@ -8,7 +8,6 @@ OUT_DIR="${ROOT_DIR}/aosp/out"
 LLVM_DIR="${ROOT_DIR}/prebuilts/clang/host/linux-x86/clang-r487747c/bin/"
 MODULES_STAGING_DIR="${OUT_DIR}/modules_staging"
 KERNEL_UAPI_HEADERS_DIR="${OUT_DIR}/headers"
-MODULE_STRIP_FLAG="INSTALL_MOD_STRIP=1"
 
 EXT_MODULES="private/google-modules/amplifiers/snd_soc_wm_adsp \
              private/google-modules/amplifiers/cs35l41 \
@@ -107,20 +106,42 @@ make -j"$(nproc)" O="${OUT_DIR}" "${MAKE_ARGS[@]}" "${TOOL_ARGS[@]}" Image.lz4
 
 # build in-kernel modules
 make -j"$(nproc)" O="${OUT_DIR}" "${MAKE_ARGS[@]}" "${TOOL_ARGS[@]}" modules
+make -j"$(nproc)" \
+  O="${OUT_DIR}" \
+  "${TOOL_ARGS[@]}" \
+  INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" \
+  "${MAKE_ARGS[@]}" \
+  modules_install
 
 # build external modules
 for EXT_MOD in ${EXT_MODULES}; do
   ABS_EXT_MOD="${ROOT_DIR}/${EXT_MOD}"
   EXT_MOD_REL=$(rel_path "${ABS_EXT_MOD}" "${KERNEL_DIR}")
+
   mkdir -p "${OUT_DIR}/${EXT_MOD_REL}"
   set -x
-  make -C "${ABS_EXT_MOD}" M="${EXT_MOD_REL}" KERNEL_SRC="${KERNEL_DIR}" \
-       O="${OUT_DIR}" "${TOOL_ARGS[@]}" "${MAKE_ARGS[@]}" modules_install
 
-  make -C "${ABS_EXT_MOD}" M="${EXT_MOD_REL}" KERNEL_SRC="${KERNEL_DIR}" \
-       O="${OUT_DIR}" "${TOOL_ARGS[@]}" ${MODULE_STRIP_FLAG} \
-       INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" \
-       INSTALL_HDR_PATH="${KERNEL_UAPI_HEADERS_DIR}/usr" \
-       "${MAKE_ARGS[@]}" modules_install
+  cd "${ROOT_DIR}"
+
+  make -C "${ABS_EXT_MOD}" \
+  M="${EXT_MOD_REL}" \
+  KERNEL_SRC="${KERNEL_DIR}" \
+  O="${OUT_DIR}" \
+  "${TOOL_ARGS[@]}" \
+  "${MAKE_ARGS[@]}" \
+  modules
+
+  cd "${KERNEL_DIR}"
+
+  make -C "${ABS_EXT_MOD}" \
+  M="${EXT_MOD_REL}" \
+  KERNEL_SRC="${KERNEL_DIR}" \
+  O="${OUT_DIR}" \
+  "${TOOL_ARGS[@]}" \
+  "${MAKE_ARGS[@]}" \
+  INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" \
+  INSTALL_HDR_PATH="${KERNEL_UAPI_HEADERS_DIR}/usr" \
+  modules_install
+
   set +x
 done

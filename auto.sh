@@ -22,7 +22,7 @@ cd "${KERNEL_DIR}"
 
 # build kernel image
 make -j"$(nproc)" "${TOOL_ARGS[@]}" gs201_defconfig
-make -j"$(nproc)" "${TOOL_ARGS[@]}" Image.lz4
+make -j"$(nproc)" "${TOOL_ARGS[@]}"
 echo "Kernel built"
 
 # build in-kernel modules

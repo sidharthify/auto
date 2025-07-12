@@ -12,8 +12,8 @@ MODULES_STAGING_DIR="${OUT_DIR}/modules_staging"
 IMAGE_DIR="${OUT_DIR}/arch/arm64/boot/Image.lz4"
 
 # AOSP
-PREBUILT_KERNEL_DIR="${ROM_DIR}/device/google/pantah-kernels/6.1/25Q1-13202328"
 ROM_DIR="/home/sidharthify/yaap"
+PREBUILT_KERNEL_DIR="${ROM_DIR}/device/google/pantah-kernels/6.1/25Q1-13202328"
 
 # dtbs
 DTB_DIR="${OUT_DIR}/google-devices/gs201/dts/"
@@ -28,12 +28,26 @@ cd "${KERNEL_DIR}"
 # build kernel image
 make -j"$(nproc)" "${TOOL_ARGS[@]}" gs201_defconfig
 make -j"$(nproc)" "${TOOL_ARGS[@]}"
-echo "Kernel built successfully"
+
+# check if image exists
+if [ -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
+	echo "Kernel Built successfully"
+else
+	echo -e "Build Failed!"
+	exit 1
+fi
 
 # build in-kernel modules
 make -j"$(nproc)" "${TOOL_ARGS[@]}" modules
 make -j"$(nproc)" "${TOOL_ARGS[@]}" INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" modules_install
-echo "Kernel modules built successfully"
+
+# check if modules are actually being built
+if find "${MODULES_STAGING_DIR}" -name "*.ko" | grep -q .; then
+	echo "Modules Built successfully"
+else
+	echo -e "Modules Build Failed!"
+	exit 1
+fi
 
 # copy kernel image to prebuilt kernel tree
 cp "${IMAGE_DIR}" "${PREBUILT_KERNEL_DIR}"
@@ -44,17 +58,18 @@ cp -r "${DTB_DIR}" "${PREBUILT_KERNEL_DIR}"
 echo "Copied dtbs to prebuilt tree"
 
 # copy kernel modules (.ko files) to prebuilt kernel tree
-find "${PREBUILT_KERNEL_DIR}" -name "*.ko" | while read -r prebuilt_ko; do
-    filename=$(basename "${prebuilt_ko}")
+mapfile -t prebuilt_kos < <(find "${PREBUILT_KERNEL_DIR}" -name "*.ko") # store in array
 
-    found=$(find "${MODULES_STAGING_DIR}" -name "${filename}" | head -n 1)
+for prebuilt_ko in "${prebuilt_kos[@]}"; do
+	filename=$(basename "${prebuilt_ko}")
+	found=$(find "${MODULES_STAGING_DIR}" -name "${filename}" | head -n 1)
 
-    if [ -n "${found}" ]; then
-        cp "${found}" "${prebuilt_ko}"
-        echo "Updated ${filename} in prebuilt tree"
-    else
-        echo "${filename} not found in built modules"
-    fi
+	if [ -n "${found}" ]; then
+		cp "${found}" "${prebuilt_ko}"
+		echo "Updated ${filename} in prebuilt tree"
+	else
+		echo "${filename} not found in built modules"
+	fi
 done
 
 echo "Stripped and copied modules to prebuilt tree"

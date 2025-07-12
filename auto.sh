@@ -16,9 +16,7 @@ PREBUILT_KERNEL_DIR="${ROM_DIR}/device/google/pantah-kernels/6.1/25Q1-13202328"
 ROM_DIR="/home/sidharthify/yaap"
 
 # dtbs
-GS201_A0_DIR="${OUT_DIR}/google-devices/gs201/dts/gs201-a0.dtb"
-GS201_B0_DIR="${OUT_DIR}/google-devices/gs201/dts/gs201-b0.dtb"
-GS201_B0_IPOP_DIR="${OUT_DIR}/google-devices/gs201/dts/gs201-b0_v2-ipop.dtb"
+DTB_DIR="${OUT_DIR}/google-devices/gs201/dts/"
 
 # LLVM
 LLVM_DIR="${ROOT_DIR}/prebuilts/clang/host/linux-x86/clang-r487747c/bin/"
@@ -42,9 +40,7 @@ cp "${IMAGE_DIR}" "${PREBUILT_KERNEL_DIR}"
 echo "Copied Image.lz4 to prebuilt tree"
 
 # copy dtbs to prebuilt kernel tree
-cp "${GS201_A0_DIR}" "${PREBUILT_KERNEL_DIR}"
-cp "${GS201_B0_DIR}" "${PREBUILT_KERNEL_DIR}"
-cp "${GS201_B0_IPOP_DIR}" "${PREBUILT_KERNEL_DIR}"
+cp -r "${DTB_DIR}" "${PREBUILT_KERNEL_DIR}"
 echo "Copied dtbs to prebuilt tree"
 
 # copy kernel modules (.ko files) to prebuilt kernel tree

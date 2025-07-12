@@ -31,11 +31,25 @@ make -j"$(nproc)" "${TOOL_ARGS[@]}" INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" mo
 echo "Modules built"
 
 # copy kernel image to prebuilt kernel tree
-cp -r "${IMAGE_DIR}" "${PREBUILT_KERNEL_DIR}"
+cp "${IMAGE_DIR}" "${PREBUILT_KERNEL_DIR}"
 echo "Copied Image.lz4 to prebuilt tree"
 
 # copy dtbs to prebuilt kernel tree
-cp -r "${GS201_A0_DIR}" "${PREBUILT_KERNEL_DIR}"
-cp -r "${GS201_B0_DIR}" "${PREBUILT_KERNEL_DIR}"
-cp -r "${GS201_B0_IPOP_DIR}" "${PREBUILT_KERNEL_DIR}"
+cp "${GS201_A0_DIR}" "${PREBUILT_KERNEL_DIR}"
+cp "${GS201_B0_DIR}" "${PREBUILT_KERNEL_DIR}"
+cp "${GS201_B0_IPOP_DIR}" "${PREBUILT_KERNEL_DIR}"
 echo "Copied dtbs to prebuilt tree"
+
+# copy kernel modules (.ko files) into prebuilt kernel tree
+find "${PREBUILT_KERNEL_DIR}" -name "*.ko" | while read -r prebuilt_ko; do
+    filename=$(basename "${prebuilt_ko}")
+
+    found=$(find "${MODULES_STAGING_DIR}" -name "${filename}" | head -n 1)
+
+    if [ -n "${found}" ]; then
+        cp "${found}" "${prebuilt_ko}"
+        echo "Updated ${filename} in prebuilt tree"
+    else
+        echo "${filename} not found in built modules"
+    fi
+done

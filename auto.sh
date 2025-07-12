@@ -14,9 +14,9 @@ TOOL_ARGS=(LLVM="${LLVM_DIR}")
 cd "${KERNEL_DIR}"
 
 # build kernel image
-make -j96 "${TOOL_ARGS[@]}" gs201_defconfig
-make -j96 "${TOOL_ARGS[@]}" Image.lz4
+make -j"$(nproc)" "${TOOL_ARGS[@]}" gs201_defconfig
+make -j"$(nproc)""${TOOL_ARGS[@]}" Image.lz4
 
 # build in-kernel modules
-make -j96 "${TOOL_ARGS[@]}" modules
-make -j96 "${TOOL_ARGS[@]}" INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" modules_install
+make -j"$(nproc)" "${TOOL_ARGS[@]}" modules
+make -j"$(nproc)" "${TOOL_ARGS[@]}" INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" modules_install

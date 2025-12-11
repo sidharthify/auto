@@ -227,4 +227,49 @@ if [ -d "${DLKM_STAGING}/system_dlkm" ]; then
     echo "  -> Updated system_dlkm.img"
 fi
 
-echo "Done making images!"
+# 7. sync metadata
+echo "Syncing Metadata to Prebuilts..."
+SRC_MOD_DIR="${MODULES_STAGING_DIR}/lib/modules/${KERNEL_VER}"
+
+# copy core metadata
+cp "${SRC_MOD_DIR}/modules.builtin" "${PREBUILT_KERNEL_DIR}/"
+cp "${SRC_MOD_DIR}/modules.builtin.modinfo" "${PREBUILT_KERNEL_DIR}/"
+# staging is safer as it covers everything.
+if [ -f "${SRC_MOD_DIR}/modules.load" ]; then
+    cp "${SRC_MOD_DIR}/modules.load" "${PREBUILT_KERNEL_DIR}/"
+fi
+
+# generate load lists
+
+generate_load_list() {
+    local input_list="$1"
+    local output_file="$2"
+    echo "  Generating ${output_file##*/}..."
+    
+    # empty the file first
+    > "${output_file}"
+
+    while read -r mod_path; do
+        local mod_name=$(basename "$mod_path")
+        # check if we actually built this module
+        if [ -f "${PREBUILT_KERNEL_DIR}/${mod_name}" ]; then
+            echo "$mod_path" >> "${output_file}"
+        else
+            echo "    [DROP] $mod_name (Not built)" 
+            true
+        fi
+    done < "${input_list}"
+}
+
+generate_load_list "${VKB_LIST}" "${PREBUILT_KERNEL_DIR}/vendor_kernel_boot.modules.load"
+generate_load_list "${VDLKM_LIST}" "${PREBUILT_KERNEL_DIR}/vendor_dlkm.modules.load"
+
+# copy blocklist
+cp "${BLOCKLIST}" "${PREBUILT_KERNEL_DIR}/vendor_dlkm.modules.blocklist"
+
+# create archive
+echo "  Creating vendor_dlkm_staging_archive.tar.gz..."
+tar -czf "${PREBUILT_KERNEL_DIR}/vendor_dlkm_staging_archive.tar.gz" \
+    -C "${DLKM_STAGING}/vendor_dlkm/lib/modules/${KERNEL_VER}" . 2>/dev/null || echo "    (Skipped archive creation)"
+
+echo "Done making images and storing metadata!"

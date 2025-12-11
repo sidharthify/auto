@@ -46,7 +46,6 @@ else
 fi
 
 # build in-kernel modules
-
 make -j"$(nproc)" "${TOOL_ARGS[@]}" modules
 make -j"$(nproc)" "${TOOL_ARGS[@]}" INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" modules_install
 
@@ -240,7 +239,6 @@ if [ -f "${SRC_MOD_DIR}/modules.load" ]; then
 fi
 
 # generate load lists
-
 generate_load_list() {
     local input_list="$1"
     local output_file="$2"
@@ -272,4 +270,37 @@ echo "  Creating vendor_dlkm_staging_archive.tar.gz..."
 tar -czf "${PREBUILT_KERNEL_DIR}/vendor_dlkm_staging_archive.tar.gz" \
     -C "${DLKM_STAGING}/vendor_dlkm/lib/modules/${KERNEL_VER}" . 2>/dev/null || echo "    (Skipped archive creation)"
 
-echo "Done making images and storing metadata!"
+#####
+#####
+# sync headers
+#####
+#####
+
+echo "Building and Syncing Kernel Headers..."
+
+# define where we want the headers to be generated temporarily
+HEADERS_OUT="${OUT_DIR}/kernel-headers"
+
+# run headers_install.
+make -j"$(nproc)" "${TOOL_ARGS[@]}" headers_install INSTALL_HDR_PATH="${HEADERS_OUT}"
+
+# copy the generated kernel-headers to the prebuilt tree
+if [ -d "${HEADERS_OUT}" ]; then
+    # clean old headers
+    rm -rf "${PREBUILT_KERNEL_DIR}/kernel-headers"
+    
+    # copy new headers
+    cp -r "${HEADERS_OUT}" "${PREBUILT_KERNEL_DIR}/"
+    echo "  -> Synced kernel-headers"
+else
+    echo "  [WARNING] Headers generation failed or path empty."
+fi
+
+# if 'original-kernel-headers' exists , copy it too
+if [ -d "${OUT_DIR}/original-kernel-headers" ]; then
+    rm -rf "${PREBUILT_KERNEL_DIR}/original-kernel-headers"
+    cp -r "${OUT_DIR}/original-kernel-headers" "${PREBUILT_KERNEL_DIR}/"
+    echo "  -> Synced original-kernel-headers"
+fi
+
+echo "Done making images, headers, and storing metadata!"

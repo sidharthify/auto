@@ -243,20 +243,4 @@ gen_list "${SDLKM_LIST}" "${PREBUILT_KERNEL_DIR}/system_dlkm.modules.load"
 # archives
 tar -czf "${PREBUILT_KERNEL_DIR}/vendor_dlkm_staging_archive.tar.gz" -C "${DLKM_STAGING}/vendor_dlkm/lib/modules/${KERNEL_VER}" . 2>/dev/null || true
 
-#####
-#####
-# sync headers
-#####
-#####
-
-echo "syncing headers..."
-
-HEADERS_OUT="${OUT_DIR}/kernel-headers"
-make -j"$(nproc)" "${TOOL_ARGS[@]}" headers_install INSTALL_HDR_PATH="${HEADERS_OUT}"
-
-if [ -d "${HEADERS_OUT}" ]; then
-    rm -rf "${PREBUILT_KERNEL_DIR}/kernel-headers"
-    cp -r "${HEADERS_OUT}" "${PREBUILT_KERNEL_DIR}/"
-fi
-
 echo "done!"

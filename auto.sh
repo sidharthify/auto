@@ -94,10 +94,17 @@ echo "sorting modules..."
 find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | while read -r module; do
     mod_name=$(basename "${module}")
     
-    # check blocklist
+    # check existing blocklist file
     if grep -q "^${mod_name}" "${BLOCKLIST}" 2>/dev/null; then continue; fi
 
-    # determine destination
+    # exclude all these
+    case "${mod_name}" in
+        btpower.ko|cnss2.ko|cnss_nl.ko|cnss_plat_ipc_qmi_svc.ko|cnss_prealloc.ko|cnss_utils.ko|drv2624.ko|gcip.ko|goodix_brl_touch.ko|google_wlan_mac.ko|iovad-vendor-hooks.ko|mhi.ko|panel-samsung-s6e3fc3-l10.ko|panel-samsung-s6e3fc5.ko|qmi_helpers.ko|qrtr.ko|qrtr-mhi.ko|wlan_firmware_service.ko|wlan.ko|zram.ko)
+            echo "   [drop] ${mod_name} (excluded)"
+            continue
+            ;;
+    esac
+
     if grep -Fq "${mod_name}" "${VKB_LIST}"; then DEST="${DLKM_STAGING}/vendor_kernel_boot"
     elif grep -Fq "${mod_name}" "${VDLKM_LIST}"; then DEST="${DLKM_STAGING}/vendor_dlkm"
     else DEST="${DLKM_STAGING}/system_dlkm"; fi
@@ -215,14 +222,15 @@ if [ -d "${DTB_SOURCE}" ]; then
 fi
 
 # sync modules
-find "${DLKM_STAGING}" -name "*.ko" -exec cp -f {} "${PREBUILT_KERNEL_DIR}/" \;
-find "${MODULES_STAGING_DIR}" -name "iovad-vendor-hooks.ko" -exec cp -f {} "${PREBUILT_KERNEL_DIR}/" \; 2>/dev/null || true
+echo "   cleaning old modules..."
+find "${PREBUILT_KERNEL_DIR}" -name "*.ko" -delete
+
+echo "   copying new modules..."
+find "${DLKM_STAGING}" -name "*.ko" -exec cp -fv {} "${PREBUILT_KERNEL_DIR}/" \;
 
 # sync insmod configs
 for variant in cheetah cloudripper panther ravenclaw; do
-    if [ ! -f "${PREBUILT_KERNEL_DIR}/init.insmod.${variant}.cfg" ]; then
-         find "${KERNEL_DIR}" -name "init.insmod.${variant}.cfg" -exec cp -f {} "${PREBUILT_KERNEL_DIR}/" \; 2>/dev/null || true
-    fi
+    find "${KERNEL_DIR}" -name "init.insmod.${variant}.cfg" -exec cp -f {} "${PREBUILT_KERNEL_DIR}/" \; 2>/dev/null || true
 done
 
 # sync metadata

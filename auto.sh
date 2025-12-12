@@ -12,10 +12,8 @@ KERNEL_DIR="${ROOT_DIR}/aosp"
 OUT_DIR="${KERNEL_DIR}/out"
 MODULES_STAGING_DIR="${OUT_DIR}/modules_staging"
 
-# images
+# image
 IMAGE_LZ4="${OUT_DIR}/arch/arm64/boot/Image.lz4"
-IMAGE_GZ="${OUT_DIR}/arch/arm64/boot/Image.gz"
-IMAGE_RAW="${OUT_DIR}/arch/arm64/boot/Image"
 
 # AOSP
 ROM_DIR="/home/sidharthify/yaap"
@@ -206,11 +204,8 @@ safe_copy "${OUT_DIR}/vendor_kernel_boot.img" "${PREBUILT_KERNEL_DIR}/"
 safe_copy "${OUT_DIR}/dtbo.img" "${PREBUILT_KERNEL_DIR}/"
 safe_copy "${OUT_DIR}/vendor_ramdisk.cpio.lz4" "${PREBUILT_KERNEL_DIR}/initramfs.img"
 
-# sync kernels
+# sync kernel
 safe_copy "${IMAGE_LZ4}" "${PREBUILT_KERNEL_DIR}/"
-safe_copy "${IMAGE_RAW}" "${PREBUILT_KERNEL_DIR}/"
-if [ ! -f "${IMAGE_GZ}" ]; then gzip -k -c "${IMAGE_RAW}" > "${IMAGE_GZ}"; fi
-safe_copy "${IMAGE_GZ}" "${PREBUILT_KERNEL_DIR}/"
 
 # sync dtbs
 if [ -d "${DTB_SOURCE}" ]; then

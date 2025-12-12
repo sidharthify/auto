@@ -14,6 +14,7 @@ MODULES_STAGING_DIR="${OUT_DIR}/modules_staging"
 
 # image
 IMAGE_LZ4="${OUT_DIR}/arch/arm64/boot/Image.lz4"
+IMAGE_RAW="${OUT_DIR}/arch/arm64/boot/Image"
 
 # AOSP
 ROM_DIR="/home/sidharthify/yaap"

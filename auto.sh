@@ -99,7 +99,7 @@ find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | while read -r module; do
 
     # exclude all these
     case "${mod_name}" in
-        btpower.ko|cnss2.ko|cnss_nl.ko|cnss_plat_ipc_qmi_svc.ko|cnss_prealloc.ko|cnss_utils.ko|drv2624.ko|gcip.ko|goodix_brl_touch.ko|google_wlan_mac.ko|iovad-vendor-hooks.ko|mhi.ko|panel-samsung-s6e3fc3-l10.ko|panel-samsung-s6e3fc5.ko|qmi_helpers.ko|qrtr.ko|qrtr-mhi.ko|wlan_firmware_service.ko|wlan.ko|zram.ko)
+        btpower.ko|cnss2.ko|cnss_nl.ko|cnss_plat_ipc_qmi_svc.ko|cnss_prealloc.ko|cnss_utils.ko|drv2624.ko|gcip.ko|goodix_brl_touch.ko|google_wlan_mac.ko|iovad-vendor-hooks.ko|mhi.ko|ufs-pixel-fips140.ko|panel-samsung-s6e3fc3-l10.ko|panel-samsung-s6e3fc5.ko|qmi_helpers.ko|qrtr.ko|qrtr-mhi.ko|wlan_firmware_service.ko|wlan.ko|zram.ko)
             echo "   [drop] ${mod_name} (excluded)"
             continue
             ;;

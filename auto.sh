@@ -2,7 +2,7 @@
 
 set -e
 
-### default config
+### configuration
 
 # kernel tree
 ROOT_DIR="/home/sidharthify/kernel"
@@ -11,264 +11,242 @@ KERNEL_DIR="${ROOT_DIR}/aosp"
 # out dirs
 OUT_DIR="${KERNEL_DIR}/out"
 MODULES_STAGING_DIR="${OUT_DIR}/modules_staging"
-IMAGE_DIR="${OUT_DIR}/arch/arm64/boot/Image.lz4"
+
+# images
+IMAGE_LZ4="${OUT_DIR}/arch/arm64/boot/Image.lz4"
+IMAGE_GZ="${OUT_DIR}/arch/arm64/boot/Image.gz"
+IMAGE_RAW="${OUT_DIR}/arch/arm64/boot/Image"
 
 # AOSP
 ROM_DIR="/home/sidharthify/yaap"
 PREBUILT_KERNEL_DIR="${ROM_DIR}/device/google/pantah-kernels/6.1/sidharthify"
 
-# dtbs
-DTB_DIR="${OUT_DIR}/google-devices/gs201/dts/"
-
-# LLVM
+# tools
 LLVM_DIR="${ROOT_DIR}/linux-x86/clang-r487747c/bin/"
 TOOL_ARGS=(LLVM="${LLVM_DIR}")
+MAGISKBOOT="${ROOT_DIR}/magiskboot"
+MKBOOTIMG="${ROM_DIR}/system/tools/mkbootimg/mkbootimg.py"
+MKDTBOIMG="${ROM_DIR}/system/tools/mkbootimg/mkdtboimg.py"
+STRIP_BIN="${LLVM_DIR}llvm-strip"
 
-
-#####
-#####
-# build kernel image
-#####
-#####
-
-cd "${KERNEL_DIR}"
-
-# build the Image
-make -j"$(nproc)" "${TOOL_ARGS[@]}" gs201_defconfig
-make -j"$(nproc)" "${TOOL_ARGS[@]}"
-
-# check if image exists
-if [ -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
-	echo "Kernel Built successfully"
-else
-	echo -e "Build Failed!"
-	exit 1
-fi
-
-# build in-kernel modules
-make -j"$(nproc)" "${TOOL_ARGS[@]}" modules
-make -j"$(nproc)" "${TOOL_ARGS[@]}" INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" modules_install
-
-# check if modules are actually being built
-if find "${MODULES_STAGING_DIR}" -name "*.ko" | grep -q .; then
-	echo "Modules Built successfully"
-else
-	echo -e "Modules Build Failed!"
-	exit 1
-fi
-
-# copy kernel image to prebuilt kernel tree
-cp "${IMAGE_DIR}" "${PREBUILT_KERNEL_DIR}"
-echo "Copied Image.lz4 to prebuilt tree"
-
-# copy dtbs to prebuilt kernel tree
-cp -r "${DTB_DIR}" "${PREBUILT_KERNEL_DIR}"
-echo "Copied dtbs to prebuilt tree"
-
-#####
-#####
-# sync modules
-#####
-#####
-
-echo "Syncing modules to prebuilt tree..."
-
-# 1. clean old modules to prevent zombies
-find "${PREBUILT_KERNEL_DIR}" -name "*.ko" -delete
-
-# 2. copy ALL built modules
-find "${MODULES_STAGING_DIR}" -type f -name "*.ko" \
-    -exec cp -f {} "${PREBUILT_KERNEL_DIR}/" \;
-
-echo "Synced $(find "${PREBUILT_KERNEL_DIR}" -name "*.ko" | wc -l) modules."
-
-#####
-#####
-# dlkm partition generation
-#####
-#####
-
-echo "Starting DLKM Image Generation..."
-
-# config
+# build lists
 BUILD_CONFIG_DIR="${KERNEL_DIR}/build_config"
 VKB_LIST="${BUILD_CONFIG_DIR}/vendor_kernel_boot.txt"
 VDLKM_LIST="${BUILD_CONFIG_DIR}/vendor_dlkm.txt"
 SDLKM_LIST="${BUILD_CONFIG_DIR}/system_dlkm.txt"
 BLOCKLIST="${BUILD_CONFIG_DIR}/blocklist.txt"
 
-STRIP_BIN="${LLVM_DIR}llvm-strip"
-KERNEL_VER_FILE="${OUT_DIR}/include/config/kernel.release"
+#####
+#####
+# build kernel & dtbs
+#####
+#####
 
-# 1. sanity checks
-if [ ! -f "${KERNEL_VER_FILE}" ]; then
-    echo "Error: kernel.release not found. Build likely failed."
+cd "${KERNEL_DIR}"
+
+# build kernel and dtbs
+make -j"$(nproc)" "${TOOL_ARGS[@]}" gs201_defconfig
+
+# overwrite source defconfig with full config (from auto2)
+cp "${OUT_DIR}/.config" "arch/arm64/configs/gs201_defconfig"
+
+make -j"$(nproc)" "${TOOL_ARGS[@]}" kernelrelease
+make -j"$(nproc)" "${TOOL_ARGS[@]}"
+make -j"$(nproc)" "${TOOL_ARGS[@]}" dtbs
+
+# check image presence
+if [ ! -f "${IMAGE_LZ4}" ]; then
+    echo "image.lz4 missing!"
     exit 1
 fi
-KERNEL_VER=$(cat "${KERNEL_VER_FILE}")
-echo "  Kernel Release: ${KERNEL_VER}"
 
-if [ ! -f "${VKB_LIST}" ] || [ ! -f "${SDLKM_LIST}" ]; then
-    echo "Error: Config lists missing in ${BUILD_CONFIG_DIR}"
-    exit 1
+# ensure raw image exists for repack
+if [ ! -f "${IMAGE_RAW}" ]; then
+    lz4 -d -f "${IMAGE_LZ4}" "${IMAGE_RAW}"
 fi
 
-# 2. prepare for fakeroot
+# build modules
+make -j"$(nproc)" "${TOOL_ARGS[@]}" modules
+make -j"$(nproc)" "${TOOL_ARGS[@]}" INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" modules_install
+
+#####
+#####
+# prepare staging
+#####
+#####
+
+KERNEL_VER=$(cat "${OUT_DIR}/include/config/kernel.release")
 DLKM_STAGING="${OUT_DIR}/dlkm_staging"
 rm -rf "${DLKM_STAGING}"
-# create standard AOSP module paths
-mkdir -p "${DLKM_STAGING}/vendor_kernel_boot/lib/modules/${KERNEL_VER}"
-mkdir -p "${DLKM_STAGING}/vendor_dlkm/lib/modules/${KERNEL_VER}"
-mkdir -p "${DLKM_STAGING}/system_dlkm/lib/modules/${KERNEL_VER}"
 
-# 3. helper to check for blacklist
-is_blocked() {
-    local mod_name=$(basename "$1" .ko)
-    if [ -f "${BLOCKLIST}" ] && grep -q "^${mod_name}" "${BLOCKLIST}" 2>/dev/null; then
-        return 0
-    fi
-    return 1
-}
+# create partition paths
+for part in vendor_kernel_boot vendor_dlkm system_dlkm; do
+    mkdir -p "${DLKM_STAGING}/${part}/lib/modules/${KERNEL_VER}"
+done
 
-echo "Sorting and Stripping Modules..."
+#####
+#####
+# sort & strip modules
+#####
+#####
 
-# 4. main loop
-# sort, copy, and strip
+echo "sorting modules..."
 
 find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | while read -r module; do
-    mod_base=$(basename "${module}")
-    # calculate relative path to preserve subfolders
-    mod_rel_path="${module#${MODULES_STAGING_DIR}/lib/modules/${KERNEL_VER}/}"
-
-    if is_blocked "${mod_base}"; then
-        echo "  [SKIP] ${mod_base} (Blocklisted)"
-        continue
-    fi
-
-    # determine partition bucket 
-	# priority: vendor_kernel_boot > vendor_dlkm > system_dlkm
-
-    DEST_ROOT=""
-    if grep -Fq "${mod_base}" "${VKB_LIST}"; then
-        DEST_ROOT="${DLKM_STAGING}/vendor_kernel_boot"
-    elif grep -Fq "${mod_base}" "${VDLKM_LIST}"; then
-        DEST_ROOT="${DLKM_STAGING}/vendor_dlkm"
-    elif grep -Fq "${mod_base}" "${SDLKM_LIST}"; then
-        DEST_ROOT="${DLKM_STAGING}/system_dlkm"
-    else
-        # fallback for modules that are unlisted
-        DEST_ROOT="${DLKM_STAGING}/system_dlkm"
-        echo "  [INFO] ${mod_base} unlisted -> system_dlkm"
-    fi
-
-    # copy file
-    DEST_PATH="${DEST_ROOT}/lib/modules/${KERNEL_VER}/${mod_rel_path}"
-    mkdir -p "$(dirname "${DEST_PATH}")"
-    cp "${module}" "${DEST_PATH}"
-
-    # strip all debug symbols
-    "${STRIP_BIN}" --strip-debug "${DEST_PATH}"
-done
-
-# 5. generate modules.dep
-echo "Running depmod..."
-for partition in vendor_kernel_boot vendor_dlkm system_dlkm; do
-    ROOT_PATH="${DLKM_STAGING}/${partition}"
-    MOD_LIB_PATH="${ROOT_PATH}/lib/modules/${KERNEL_VER}"
+    mod_name=$(basename "${module}")
     
-    # only run if modules exist
-    if [ -d "${MOD_LIB_PATH}" ]; then
-        # copy required metadata files from the main staging area
-        # depmod needs these to understand symbols and build order
-        cp "${MODULES_STAGING_DIR}/lib/modules/${KERNEL_VER}/modules.builtin" "${MOD_LIB_PATH}/" 2>/dev/null || true
-        cp "${MODULES_STAGING_DIR}/lib/modules/${KERNEL_VER}/modules.builtin.modinfo" "${MOD_LIB_PATH}/" 2>/dev/null || true
-        cp "${MODULES_STAGING_DIR}/lib/modules/${KERNEL_VER}/modules.order" "${MOD_LIB_PATH}/" 2>/dev/null || true
+    # check blocklist
+    if grep -q "^${mod_name}" "${BLOCKLIST}" 2>/dev/null; then continue; fi
 
-        # copy System.map temporarily to check for symbols
-        cp "${OUT_DIR}/System.map" "${ROOT_PATH}/System.map" 2>/dev/null || true
-        
-        # -b: basedir
-        depmod -b "${ROOT_PATH}" "${KERNEL_VER}"
-        
-        # cleanup temp files
-		# keep modules.order/builtin as they are useful for debugging
-        rm -f "${ROOT_PATH}/System.map"
-        rm -f "${MOD_LIB_PATH}/build"
-        rm -f "${MOD_LIB_PATH}/source"
+    # determine destination
+    if grep -Fq "${mod_name}" "${VKB_LIST}"; then DEST="${DLKM_STAGING}/vendor_kernel_boot"
+    elif grep -Fq "${mod_name}" "${VDLKM_LIST}"; then DEST="${DLKM_STAGING}/vendor_dlkm"
+    else DEST="${DLKM_STAGING}/system_dlkm"; fi
+    
+    # copy and strip
+    cp "${module}" "${DEST}/lib/modules/${KERNEL_VER}/"
+    "${STRIP_BIN}" --strip-debug "${DEST}/lib/modules/${KERNEL_VER}/${mod_name}"
+done
+
+#####
+#####
+# generate dependency maps
+#####
+#####
+
+echo "generating depmaps..."
+
+SRC_METADATA="${MODULES_STAGING_DIR}/lib/modules/${KERNEL_VER}"
+for part in vendor_kernel_boot vendor_dlkm system_dlkm; do
+    TARGET_DIR="${DLKM_STAGING}/${part}/lib/modules/${KERNEL_VER}"
+    
+    # copy metadata
+    cp "${SRC_METADATA}/modules.builtin" "${TARGET_DIR}/"
+    cp "${SRC_METADATA}/modules.builtin.modinfo" "${TARGET_DIR}/"
+    cp "${SRC_METADATA}/modules.order" "${TARGET_DIR}/"
+    
+    # run depmod
+    depmod -b "${DLKM_STAGING}/${part}" "${KERNEL_VER}"
+    
+    # cleanup
+    rm -f "${TARGET_DIR}/modules.alias" "${TARGET_DIR}/modules.symbols"
+done
+
+#####
+#####
+# pack images
+#####
+#####
+
+echo "packing images..."
+
+# erofs for dlkms
+mkfs.erofs -z lz4hc "${OUT_DIR}/vendor_dlkm.img" "${DLKM_STAGING}/vendor_dlkm"
+mkfs.erofs -z lz4hc "${OUT_DIR}/system_dlkm.img" "${DLKM_STAGING}/system_dlkm"
+
+# combine dtbs
+DTB_PATHS=("${OUT_DIR}/arch/arm64/boot/dts/google/gs201" "${OUT_DIR}/google-devices/gs201/dts" "${OUT_DIR}/arch/arm64/boot/dts/google")
+DTB_SOURCE=""
+for path in "${DTB_PATHS[@]}"; do
+    if [ -d "$path" ] && compgen -G "$path/*.dtb" > /dev/null; then DTB_SOURCE="$path"; break; fi
+done
+cat "${DTB_SOURCE}"/*.dtb > "${OUT_DIR}/combined.dtb"
+
+# generate dtbo
+if [ -f "${MKDTBOIMG}" ]; then
+    DTBO_FILES=$(find "${DTB_SOURCE}" -name "*.dtbo")
+    if [ -n "${DTBO_FILES}" ]; then python3 "${MKDTBOIMG}" create "${OUT_DIR}/dtbo.img" ${DTBO_FILES}; fi
+fi
+
+# vendor ramdisk and boot image
+( cd "${DLKM_STAGING}/vendor_kernel_boot" && find . | cpio -H newc -o 2>/dev/null | lz4 -l -12 --favor-decSpeed > "${OUT_DIR}/vendor_ramdisk.cpio.lz4" )
+python3 "${MKBOOTIMG}" --vendor_ramdisk "${OUT_DIR}/vendor_ramdisk.cpio.lz4" --dtb "${OUT_DIR}/combined.dtb" --header_version 4 --vendor_boot "${OUT_DIR}/vendor_kernel_boot.img"
+
+#####
+#####
+# repack boot.img
+#####
+#####
+
+echo "repacking boot.img..."
+
+if [ ! -f "${MAGISKBOOT}" ]; then echo "magiskboot not found!"; exit 1; fi
+if [ ! -f "${PREBUILT_KERNEL_DIR}/boot.img" ]; then echo "source boot.img not found!"; exit 1; fi
+
+rm -rf "${OUT_DIR}/boot_repack" && mkdir -p "${OUT_DIR}/boot_repack"
+cp "${PREBUILT_KERNEL_DIR}/boot.img" "${OUT_DIR}/boot_repack/"
+
+(
+    cd "${OUT_DIR}/boot_repack"
+    "${MAGISKBOOT}" unpack boot.img > /dev/null
+    
+    # replace kernel
+    cp -f "${IMAGE_RAW}" kernel
+    
+    "${MAGISKBOOT}" repack boot.img > /dev/null
+)
+
+mv -f "${OUT_DIR}/boot_repack/new-boot.img" "${OUT_DIR}/boot.img"
+
+#####
+#####
+# sync to prebuilts
+#####
+#####
+
+echo "syncing files..."
+
+safe_copy() { if [ -f "$1" ]; then cp -f "$1" "$2"; else echo "   [warn] missing $1"; fi }
+
+# sync images
+safe_copy "${OUT_DIR}/boot.img" "${PREBUILT_KERNEL_DIR}/"
+safe_copy "${OUT_DIR}/vendor_dlkm.img" "${PREBUILT_KERNEL_DIR}/"
+safe_copy "${OUT_DIR}/system_dlkm.img" "${PREBUILT_KERNEL_DIR}/"
+safe_copy "${OUT_DIR}/vendor_kernel_boot.img" "${PREBUILT_KERNEL_DIR}/"
+safe_copy "${OUT_DIR}/dtbo.img" "${PREBUILT_KERNEL_DIR}/"
+safe_copy "${OUT_DIR}/vendor_ramdisk.cpio.lz4" "${PREBUILT_KERNEL_DIR}/initramfs.img"
+
+# sync kernels
+safe_copy "${IMAGE_LZ4}" "${PREBUILT_KERNEL_DIR}/"
+safe_copy "${IMAGE_RAW}" "${PREBUILT_KERNEL_DIR}/"
+if [ ! -f "${IMAGE_GZ}" ]; then gzip -k -c "${IMAGE_RAW}" > "${IMAGE_GZ}"; fi
+safe_copy "${IMAGE_GZ}" "${PREBUILT_KERNEL_DIR}/"
+
+# sync dtbs
+if [ -d "${DTB_SOURCE}" ]; then
+    cp -r "${DTB_SOURCE}"/*.dtb "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
+    cp -r "${DTB_SOURCE}"/*.dtbo "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
+fi
+
+# sync extra hooks/modules
+find "${MODULES_STAGING_DIR}" -name "iovad-vendor-hooks.ko" -exec cp -f {} "${PREBUILT_KERNEL_DIR}/" \; 2>/dev/null || true
+
+# sync insmod configs
+for variant in cheetah cloudripper panther ravenclaw; do
+    if [ ! -f "${PREBUILT_KERNEL_DIR}/init.insmod.${variant}.cfg" ]; then
+         find "${KERNEL_DIR}" -name "init.insmod.${variant}.cfg" -exec cp -f {} "${PREBUILT_KERNEL_DIR}/" \; 2>/dev/null || true
     fi
 done
 
-# 6. build the actual EROFS Images
-if [ "${DRY_DLKM}" == "1" ] || [ "${1}" == "--dry-run" ]; then
-    echo "Dry run: Skipping image creation."
-    exit 0
-fi
-
-echo "Building EROFS images..."
-if [ -d "${DLKM_STAGING}/vendor_kernel_boot" ]; then
-    mkfs.erofs -z lz4hc "${OUT_DIR}/vendor_kernel_boot.img" \
-        "${DLKM_STAGING}/vendor_kernel_boot"
-    cp "${OUT_DIR}/vendor_kernel_boot.img" "${PREBUILT_KERNEL_DIR}/"
-    echo "  -> Updated vendor_kernel_boot.img"
-fi
-
-if [ -d "${DLKM_STAGING}/vendor_dlkm" ]; then
-    mkfs.erofs -z lz4hc "${OUT_DIR}/vendor_dlkm.img" \
-        "${DLKM_STAGING}/vendor_dlkm"
-    cp "${OUT_DIR}/vendor_dlkm.img" "${PREBUILT_KERNEL_DIR}/"
-    echo "  -> Updated vendor_dlkm.img"
-fi
-
-if [ -d "${DLKM_STAGING}/system_dlkm" ]; then
-    mkfs.erofs -z lz4hc "${OUT_DIR}/system_dlkm.img" \
-        "${DLKM_STAGING}/system_dlkm"
-    cp "${OUT_DIR}/system_dlkm.img" "${PREBUILT_KERNEL_DIR}/"
-    echo "  -> Updated system_dlkm.img"
-fi
-
-# 7. sync metadata
-echo "Syncing Metadata to Prebuilts..."
-SRC_MOD_DIR="${MODULES_STAGING_DIR}/lib/modules/${KERNEL_VER}"
-
-# copy core metadata
-cp "${SRC_MOD_DIR}/modules.builtin" "${PREBUILT_KERNEL_DIR}/"
-cp "${SRC_MOD_DIR}/modules.builtin.modinfo" "${PREBUILT_KERNEL_DIR}/"
-# staging is safer as it covers everything.
-if [ -f "${SRC_MOD_DIR}/modules.load" ]; then
-    cp "${SRC_MOD_DIR}/modules.load" "${PREBUILT_KERNEL_DIR}/"
-fi
+# sync metadata
+safe_copy "${OUT_DIR}/System.map" "${PREBUILT_KERNEL_DIR}/"
+safe_copy "${OUT_DIR}/.config" "${PREBUILT_KERNEL_DIR}/"
+cp -f "${SRC_METADATA}/modules.builtin" "${PREBUILT_KERNEL_DIR}/"
+cp -f "${SRC_METADATA}/modules.builtin.modinfo" "${PREBUILT_KERNEL_DIR}/"
 
 # generate load lists
-generate_load_list() {
-    local input_list="$1"
-    local output_file="$2"
-    echo "  Generating ${output_file##*/}..."
-    
-    # empty the file first
-    > "${output_file}"
-
-    while read -r mod_path; do
-        local mod_name=$(basename "$mod_path")
-        # check if we actually built this module
-        if [ -f "${PREBUILT_KERNEL_DIR}/${mod_name}" ]; then
-            echo "$mod_path" >> "${output_file}"
-        else
-            echo "    [DROP] $mod_name (Not built)" 
-            true
-        fi
-    done < "${input_list}"
+gen_list() {
+    local input="$1"; local output="$2"; > "$output"
+    sort -u "$input" | while read -r mod; do
+        if [ -f "${PREBUILT_KERNEL_DIR}/$(basename "$mod")" ]; then echo "$mod" >> "$output"; fi
+    done
 }
+gen_list "${VKB_LIST}" "${PREBUILT_KERNEL_DIR}/vendor_kernel_boot.modules.load"
+gen_list "${VDLKM_LIST}" "${PREBUILT_KERNEL_DIR}/vendor_dlkm.modules.load"
+gen_list "${SDLKM_LIST}" "${PREBUILT_KERNEL_DIR}/system_dlkm.modules.load"
 
-generate_load_list "${VKB_LIST}" "${PREBUILT_KERNEL_DIR}/vendor_kernel_boot.modules.load"
-generate_load_list "${VDLKM_LIST}" "${PREBUILT_KERNEL_DIR}/vendor_dlkm.modules.load"
-
-# copy blocklist
-cp "${BLOCKLIST}" "${PREBUILT_KERNEL_DIR}/vendor_dlkm.modules.blocklist"
-
-# create archive
-echo "  Creating vendor_dlkm_staging_archive.tar.gz..."
-tar -czf "${PREBUILT_KERNEL_DIR}/vendor_dlkm_staging_archive.tar.gz" \
-    -C "${DLKM_STAGING}/vendor_dlkm/lib/modules/${KERNEL_VER}" . 2>/dev/null || echo "    (Skipped archive creation)"
+# archives
+tar -czf "${PREBUILT_KERNEL_DIR}/vendor_dlkm_staging_archive.tar.gz" -C "${DLKM_STAGING}/vendor_dlkm/lib/modules/${KERNEL_VER}" . 2>/dev/null || true
 
 #####
 #####
@@ -276,31 +254,14 @@ tar -czf "${PREBUILT_KERNEL_DIR}/vendor_dlkm_staging_archive.tar.gz" \
 #####
 #####
 
-echo "Building and Syncing Kernel Headers..."
+echo "syncing headers..."
 
-# define where we want the headers to be generated temporarily
 HEADERS_OUT="${OUT_DIR}/kernel-headers"
-
-# run headers_install.
 make -j"$(nproc)" "${TOOL_ARGS[@]}" headers_install INSTALL_HDR_PATH="${HEADERS_OUT}"
 
-# copy the generated kernel-headers to the prebuilt tree
 if [ -d "${HEADERS_OUT}" ]; then
-    # clean old headers
     rm -rf "${PREBUILT_KERNEL_DIR}/kernel-headers"
-    
-    # copy new headers
     cp -r "${HEADERS_OUT}" "${PREBUILT_KERNEL_DIR}/"
-    echo "  -> Synced kernel-headers"
-else
-    echo "  [WARNING] Headers generation failed or path empty."
 fi
 
-# if 'original-kernel-headers' exists , copy it too
-if [ -d "${OUT_DIR}/original-kernel-headers" ]; then
-    rm -rf "${PREBUILT_KERNEL_DIR}/original-kernel-headers"
-    cp -r "${OUT_DIR}/original-kernel-headers" "${PREBUILT_KERNEL_DIR}/"
-    echo "  -> Synced original-kernel-headers"
-fi
-
-echo "Done making images, headers, and storing metadata!"
+echo "done!"

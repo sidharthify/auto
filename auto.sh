@@ -19,7 +19,7 @@ IMAGE_RAW="${OUT_DIR}/arch/arm64/boot/Image"
 
 # AOSP
 ROM_DIR="/home/sidharthify/yaap"
-PREBUILT_KERNEL_DIR="${ROM_DIR}/device/google/pantah-kernels/6.1/sidharthify"
+PREBUILT_KERNEL_DIR="${ROM_DIR}/device/google/pantah-kernels/6.1"
 
 # tools
 LLVM_DIR="${ROOT_DIR}/linux-x86/clang-r487747c/bin/"

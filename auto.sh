@@ -214,7 +214,8 @@ if [ -d "${DTB_SOURCE}" ]; then
     cp -r "${DTB_SOURCE}"/*.dtbo "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
 fi
 
-# sync extra hooks/modules
+# sync modules
+find "${DLKM_STAGING}" -name "*.ko" -exec cp -f {} "${PREBUILT_KERNEL_DIR}/" \;
 find "${MODULES_STAGING_DIR}" -name "iovad-vendor-hooks.ko" -exec cp -f {} "${PREBUILT_KERNEL_DIR}/" \; 2>/dev/null || true
 
 # sync insmod configs

@@ -116,6 +116,28 @@ done
 
 #####
 #####
+# re-sign modules
+#####
+#####
+
+echo "re-signing modules..."
+
+# check if required files exist
+SIGN_FILE="${OUT_DIR}/scripts/sign-file"
+SIGN_KEY="${OUT_DIR}/certs/signing_key.pem"
+SIGN_CERT="${OUT_DIR}/certs/signing_key.x509"
+
+if [ -f "${SIGN_FILE}" ] && [ -f "${SIGN_KEY}" ] && [ -f "${SIGN_CERT}" ]; then
+    # Iterate over all modules in the staging directory (system_dlkm, vendor_dlkm, etc.)
+    find "${DLKM_STAGING}" -type f -name "*.ko" | while read -r module; do
+        "${SIGN_FILE}" sha1 "${SIGN_KEY}" "${SIGN_CERT}" "${module}"
+    done
+else
+    echo "   [warn] signing tools or keys not found. skipping module signing."
+fi
+
+#####
+#####
 # generate dependency maps
 #####
 #####

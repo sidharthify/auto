@@ -239,17 +239,6 @@ safe_copy "${OUT_DIR}/.config" "${PREBUILT_KERNEL_DIR}/"
 cp -f "${SRC_METADATA}/modules.builtin" "${PREBUILT_KERNEL_DIR}/"
 cp -f "${SRC_METADATA}/modules.builtin.modinfo" "${PREBUILT_KERNEL_DIR}/"
 
-# generate load lists
-gen_list() {
-    local input="$1"; local output="$2"; > "$output"
-    sort -u "$input" | while read -r mod; do
-        if [ -f "${PREBUILT_KERNEL_DIR}/$(basename "$mod")" ]; then echo "$mod" >> "$output"; fi
-    done
-}
-gen_list "${VKB_LIST}" "${PREBUILT_KERNEL_DIR}/vendor_kernel_boot.modules.load"
-gen_list "${VDLKM_LIST}" "${PREBUILT_KERNEL_DIR}/vendor_dlkm.modules.load"
-gen_list "${SDLKM_LIST}" "${PREBUILT_KERNEL_DIR}/system_dlkm.modules.load"
-
 # archives
 tar -czf "${PREBUILT_KERNEL_DIR}/vendor_dlkm_staging_archive.tar.gz" -C "${DLKM_STAGING}/vendor_dlkm/lib/modules/${KERNEL_VER}" . 2>/dev/null || true
 

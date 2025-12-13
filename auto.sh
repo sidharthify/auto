@@ -26,6 +26,10 @@ TOOL_ARGS=(LLVM="${LLVM_DIR}")
 MAGISKBOOT="${ROOT_DIR}/magiskboot"
 MKBOOTIMG="${ROM_DIR}/system/tools/mkbootimg/mkbootimg.py"
 MKDTBOIMG="${ROM_DIR}/system/tools/mkbootimg/mkdtboimg.py"
+
+# attempt to find avbtool, fallback to PATH
+AVBTOOL="${ROM_DIR}/external/avb/avbtool.py"
+if [ ! -f "${AVBTOOL}" ]; then AVBTOOL="avbtool"; fi
 STRIP_BIN="${LLVM_DIR}llvm-strip"
 
 # build lists
@@ -128,7 +132,6 @@ SIGN_KEY="${OUT_DIR}/certs/signing_key.pem"
 SIGN_CERT="${OUT_DIR}/certs/signing_key.x509"
 
 if [ -f "${SIGN_FILE}" ] && [ -f "${SIGN_KEY}" ] && [ -f "${SIGN_CERT}" ]; then
-    # Iterate over all modules in the staging directory (system_dlkm, vendor_dlkm, etc.)
     find "${DLKM_STAGING}" -type f -name "*.ko" | while read -r module; do
         "${SIGN_FILE}" sha1 "${SIGN_KEY}" "${SIGN_CERT}" "${module}"
     done
@@ -138,7 +141,7 @@ fi
 
 #####
 #####
-# generate dependency maps
+# generate dependency maps & modules.load
 #####
 #####
 
@@ -153,6 +156,12 @@ for part in vendor_kernel_boot vendor_dlkm system_dlkm; do
     cp "${SRC_METADATA}/modules.builtin.modinfo" "${TARGET_DIR}/"
     cp "${SRC_METADATA}/modules.order" "${TARGET_DIR}/"
     
+    # generate modules.load
+    (
+        cd "${TARGET_DIR}"
+        find . -maxdepth 1 -name "*.ko" | sed 's|^\./||' | sort > modules.load
+    )
+
     # run depmod
     depmod -b "${DLKM_STAGING}/${part}" "${KERNEL_VER}"
     
@@ -171,6 +180,24 @@ echo "packing images..."
 # erofs for dlkms
 mkfs.erofs -z lz4hc "${OUT_DIR}/vendor_dlkm.img" "${DLKM_STAGING}/vendor_dlkm"
 mkfs.erofs -z lz4hc "${OUT_DIR}/system_dlkm.img" "${DLKM_STAGING}/system_dlkm"
+
+# AVB Hash Footer
+# this is critical for the partitions to mount
+if command -v python3 &>/dev/null && [ -f "${AVBTOOL}" ]; then
+    echo "   signing images (avb)..."
+    python3 "${AVBTOOL}" add_hashtree_footer \
+        --partition_name vendor_dlkm \
+        --hash_algorithm sha256 \
+        --image "${OUT_DIR}/vendor_dlkm.img"
+
+    python3 "${AVBTOOL}" add_hashtree_footer \
+        --partition_name system_dlkm \
+        --hash_algorithm sha256 \
+        --image "${OUT_DIR}/system_dlkm.img"
+else
+    echo "   [warn] avbtool not found! Images might not mount."
+fi
+
 
 # combine dtbs
 DTB_PATHS=("${OUT_DIR}/arch/arm64/boot/dts/google/gs201" "${OUT_DIR}/google-devices/gs201/dts" "${OUT_DIR}/arch/arm64/boot/dts/google")

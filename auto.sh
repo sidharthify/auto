@@ -5,7 +5,7 @@ set -e
 ### configuration
 
 # kernel tree
-ROOT_DIR="/home/sidharthify/kernel"
+ROOT_DIR="$(pwd)"
 KERNEL_DIR="${ROOT_DIR}/aosp"
 
 # out dirs
@@ -16,8 +16,8 @@ MODULES_STAGING_DIR="${OUT_DIR}/modules_staging"
 IMAGE_LZ4="${OUT_DIR}/arch/arm64/boot/Image.lz4"
 IMAGE_RAW="${OUT_DIR}/arch/arm64/boot/Image"
 
-# AOSP
-ROM_DIR="/home/sidharthify/yaap"
+# AOSP (adjust if your rom source is elsewhere)
+ROM_DIR="${HOME}/yaap"
 PREBUILT_KERNEL_DIR="${ROM_DIR}/device/google/pantah-kernels/6.1"
 
 # tools
@@ -82,6 +82,42 @@ make -j"$(nproc)" "${TOOL_ARGS[@]}" INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" mo
 
 #####
 #####
+# KSU
+#####
+#####
+
+echo "========================================"
+echo "KernelSU Selection"
+echo "========================================"
+
+# We are inside aosp/ but we need to reference the root for ksu.sh
+read -p "   Do you want to build KernelSU? (y/n): " build_ksu_choice
+KSU_KO_PATH=""
+
+if [[ "$build_ksu_choice" =~ ^[Yy]$ ]]; then
+    echo "   1) KernelSU (Standard)"
+    echo "   2) KernelSU-Next"
+    read -p "   Select variant [1/2]: " ksu_variant
+
+    KSU_SCRIPT="${ROOT_DIR}/ksu.sh"
+
+    if [ -f "${KSU_SCRIPT}" ]; then
+        if [ "$ksu_variant" == "2" ]; then
+            bash "${KSU_SCRIPT}" next
+            KSU_KO_PATH="${OUT_DIR}/kernelsu_next.ko"
+        else
+            bash "${KSU_SCRIPT}" standard
+            KSU_KO_PATH="${OUT_DIR}/kernelsu.ko"
+        fi
+    else
+        echo "   [WARN] ksu.sh not found at ${KSU_SCRIPT}. Skipping KSU build."
+    fi
+else
+    echo "   [info] Skipping KernelSU."
+fi
+
+#####
+#####
 # prepare staging
 #####
 #####
@@ -109,7 +145,7 @@ echo "========================================"
 
 find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | sort | while read -r module; do
     mod_name=$(basename "${module}")
-    
+
     # check existing blocklist file
     if grep -q "^${mod_name}" "${BLOCKLIST}" 2>/dev/null; then continue; fi
 
@@ -121,21 +157,28 @@ find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | sort | while read -r module
             ;;
     esac
 
-    if grep -Fq "${mod_name}" "${VKB_LIST}"; then 
+    if grep -Fq "${mod_name}" "${VKB_LIST}"; then
         DEST="${DLKM_STAGING}/vendor_kernel_boot"
         echo "   [VKB]  ${mod_name}"
-    elif grep -Fq "${mod_name}" "${VDLKM_LIST}"; then 
+    elif grep -Fq "${mod_name}" "${VDLKM_LIST}"; then
         DEST="${DLKM_STAGING}/vendor_dlkm"
         echo "   [V_DLKM] ${mod_name}"
-    else 
+    else
         DEST="${DLKM_STAGING}/system_dlkm"
         echo "   [S_DLKM] ${mod_name}"
     fi
-    
+
     # copy and strip
     cp "${module}" "${DEST}/lib/modules/${KERNEL_VER}/"
     "${STRIP_BIN}" --strip-debug "${DEST}/lib/modules/${KERNEL_VER}/${mod_name}"
 done
+
+# === injection for KSU ===
+if [ -n "$KSU_KO_PATH" ] && [ -f "$KSU_KO_PATH" ]; then
+    echo "   [inject] Found built KSU module: $(basename "$KSU_KO_PATH")"
+    cp "$KSU_KO_PATH" "${DLKM_STAGING}/system_dlkm/lib/modules/${KERNEL_VER}/"
+    echo "      -> Copied to system_dlkm"
+fi
 
 #####
 #####
@@ -175,12 +218,12 @@ SRC_METADATA="${MODULES_STAGING_DIR}/lib/modules/${KERNEL_VER}"
 for part in vendor_kernel_boot vendor_dlkm system_dlkm; do
     echo "   [meta] Processing ${part}..."
     TARGET_DIR="${DLKM_STAGING}/${part}/lib/modules/${KERNEL_VER}"
-    
+
     # copy metadata
     cp "${SRC_METADATA}/modules.builtin" "${TARGET_DIR}/"
     cp "${SRC_METADATA}/modules.builtin.modinfo" "${TARGET_DIR}/"
     cp "${SRC_METADATA}/modules.order" "${TARGET_DIR}/"
-    
+
     # generate modules.load
     (
         cd "${TARGET_DIR}"
@@ -189,10 +232,8 @@ for part in vendor_kernel_boot vendor_dlkm system_dlkm; do
     )
 
     # run depmod
-    # added -v for verbosity, though we redirect to null to keep it clean unless it fails. 
-    # If you really want to see the depmod output, remove " > /dev/null"
     depmod -b "${DLKM_STAGING}/${part}" "${KERNEL_VER}"
-    
+
     # cleanup
     rm -f "${TARGET_DIR}/modules.alias" "${TARGET_DIR}/modules.symbols"
 done
@@ -278,11 +319,11 @@ cp "${PREBUILT_KERNEL_DIR}/boot.img" "${OUT_DIR}/boot_repack/"
     cd "${OUT_DIR}/boot_repack"
     echo "   [unpack] Unpacking boot.img..."
     "${MAGISKBOOT}" unpack boot.img > /dev/null
-    
+
     # replace kernel
     echo "   [replace] Swapping kernel..."
     cp -f "${IMAGE_RAW}" kernel
-    
+
     echo "   [repack] Repacking boot.img..."
     "${MAGISKBOOT}" repack boot.img > /dev/null
 )
@@ -299,13 +340,13 @@ echo "========================================"
 echo "Syncing to Prebuilts"
 echo "========================================"
 
-safe_copy() { 
-    if [ -f "$1" ]; then 
+safe_copy() {
+    if [ -f "$1" ]; then
         echo "   [sync] $(basename "$1")"
         cp -f "$1" "$2"
-    else 
+    else
         echo "   [WARN] missing $1"
-    fi 
+    fi
 }
 
 # sync images

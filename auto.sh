@@ -16,7 +16,7 @@ MODULES_STAGING_DIR="${OUT_DIR}/modules_staging"
 IMAGE_LZ4="${OUT_DIR}/arch/arm64/boot/Image.lz4"
 IMAGE_RAW="${OUT_DIR}/arch/arm64/boot/Image"
 
-# AOSP (adjust if your rom source is elsewhere)
+# AOSP
 ROM_DIR="${HOME}/yaap"
 PREBUILT_KERNEL_DIR="${ROM_DIR}/device/google/pantah-kernels/6.1"
 
@@ -27,7 +27,7 @@ MAGISKBOOT="${ROOT_DIR}/magiskboot"
 MKBOOTIMG="${ROM_DIR}/system/tools/mkbootimg/mkbootimg.py"
 MKDTBOIMG="${ROM_DIR}/system/tools/mkbootimg/mkdtboimg.py"
 
-# attempt to find avbtool, fallback to PATH
+# avbtool
 AVBTOOL="${ROM_DIR}/external/avb/avbtool.py"
 if [ ! -f "${AVBTOOL}" ]; then AVBTOOL="avbtool"; fi
 STRIP_BIN="${LLVM_DIR}llvm-strip"
@@ -51,11 +51,9 @@ echo "========================================"
 
 cd "${KERNEL_DIR}"
 
-# build kernel and dtbs
+# build kernel
 echo "   [build] Generating config..."
 make -j"$(nproc)" "${TOOL_ARGS[@]}" gs201_defconfig
-
-# overwrite source defconfig with full config (from auto2)
 cp -v "${OUT_DIR}/.config" "arch/arm64/configs/gs201_defconfig"
 
 echo "   [build] Compiling kernel..."
@@ -63,13 +61,11 @@ make -j"$(nproc)" "${TOOL_ARGS[@]}" kernelrelease
 make -j"$(nproc)" "${TOOL_ARGS[@]}"
 make -j"$(nproc)" "${TOOL_ARGS[@]}" dtbs
 
-# check image presence
 if [ ! -f "${IMAGE_LZ4}" ]; then
     echo "ERROR: image.lz4 missing!"
     exit 1
 fi
 
-# ensure raw image exists for repack
 if [ ! -f "${IMAGE_RAW}" ]; then
     echo "   [info] Decompressing LZ4 image..."
     lz4 -d -f "${IMAGE_LZ4}" "${IMAGE_RAW}"
@@ -90,27 +86,66 @@ echo "========================================"
 echo "KernelSU Selection"
 echo "========================================"
 
-# We are inside aosp/ but we need to reference the root for ksu.sh
 read -p "   Do you want to build KernelSU? (y/n): " build_ksu_choice
-KSU_KO_PATH=""
+KSU_KO_INJECT_PATH=""
+KSU_SAVE_DIR="${ROOT_DIR}/KSU"
+KSU_SCRIPT="${ROOT_DIR}/ksu.sh"
 
 if [[ "$build_ksu_choice" =~ ^[Yy]$ ]]; then
+    if [ ! -f "${KSU_SCRIPT}" ]; then
+        echo "   [ERROR] ksu.sh not found at ${KSU_SCRIPT}"
+        exit 1
+    fi
+
+    # create save dir
+    mkdir -p "${KSU_SAVE_DIR}"
+
     echo "   1) KernelSU (Standard)"
     echo "   2) KernelSU-Next"
-    read -p "   Select variant [1/2]: " ksu_variant
+    echo "   3) Both"
+    read -p "   Select variant [1/2/3]: " ksu_variant
 
-    KSU_SCRIPT="${ROOT_DIR}/ksu.sh"
-
-    if [ -f "${KSU_SCRIPT}" ]; then
-        if [ "$ksu_variant" == "2" ]; then
-            bash "${KSU_SCRIPT}" next
-            KSU_KO_PATH="${OUT_DIR}/kernelsu_next.ko"
-        else
+    case "$ksu_variant" in
+        1)
             bash "${KSU_SCRIPT}" standard
-            KSU_KO_PATH="${OUT_DIR}/kernelsu.ko"
-        fi
-    else
-        echo "   [WARN] ksu.sh not found at ${KSU_SCRIPT}. Skipping KSU build."
+            cp "${OUT_DIR}/kernelsu.ko" "${KSU_SAVE_DIR}/kernelsu.ko"
+            KSU_KO_INJECT_PATH="${KSU_SAVE_DIR}/kernelsu.ko"
+            ;;
+        2)
+            bash "${KSU_SCRIPT}" next
+            cp "${OUT_DIR}/kernelsu_next.ko" "${KSU_SAVE_DIR}/kernelsu_next.ko"
+            KSU_KO_INJECT_PATH="${KSU_SAVE_DIR}/kernelsu_next.ko"
+            ;;
+        3)
+            echo "   [both] Building Standard..."
+            bash "${KSU_SCRIPT}" standard
+            cp "${OUT_DIR}/kernelsu.ko" "${KSU_SAVE_DIR}/kernelsu.ko"
+            
+            echo "   [both] Building Next..."
+            bash "${KSU_SCRIPT}" next
+            cp "${OUT_DIR}/kernelsu_next.ko" "${KSU_SAVE_DIR}/kernelsu_next.ko"
+
+            echo "   ---------------------------------"
+            echo "   Both modules saved to: ${KSU_SAVE_DIR}/"
+            echo "   Which one do you want to INJECT into system_dlkm?"
+            echo "   1) Standard (kernelsu.ko)"
+            echo "   2) Next (kernelsu_next.ko)"
+            echo "   n) None"
+            read -p "   Select injection [1/2/n]: " inject_choice
+            
+            if [ "$inject_choice" == "1" ]; then
+                KSU_KO_INJECT_PATH="${KSU_SAVE_DIR}/kernelsu.ko"
+            elif [ "$inject_choice" == "2" ]; then
+                KSU_KO_INJECT_PATH="${KSU_SAVE_DIR}/kernelsu_next.ko"
+            fi
+            ;;
+        *)
+            echo "   [WARN] Invalid selection. Skipping KSU."
+            ;;
+    esac
+    
+    if [ -n "$KSU_KO_INJECT_PATH" ]; then
+        echo "   [info] Selected for injection: $(basename "$KSU_KO_INJECT_PATH")"
     fi
 else
     echo "   [info] Skipping KernelSU."
@@ -128,7 +163,6 @@ echo "   [info] Kernel Version: ${KERNEL_VER}"
 echo "   [info] Cleaning staging dir: ${DLKM_STAGING}"
 rm -rf "${DLKM_STAGING}"
 
-# create partition paths
 for part in vendor_kernel_boot vendor_dlkm system_dlkm; do
     mkdir -p "${DLKM_STAGING}/${part}/lib/modules/${KERNEL_VER}"
 done
@@ -145,11 +179,9 @@ echo "========================================"
 
 find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | sort | while read -r module; do
     mod_name=$(basename "${module}")
-
-    # check existing blocklist file
     if grep -q "^${mod_name}" "${BLOCKLIST}" 2>/dev/null; then continue; fi
 
-    # exclude all these
+    # exclude list
     case "${mod_name}" in
         btpower.ko|cnss2.ko|cnss_nl.ko|cnss_plat_ipc_qmi_svc.ko|cnss_prealloc.ko|cnss_utils.ko|drv2624.ko|gcip.ko|goodix_brl_touch.ko|google_wlan_mac.ko|iovad-vendor-hooks.ko|mhi.ko|ufs-pixel-fips140.ko|panel-samsung-s6e3fc3-l10.ko|panel-samsung-s6e3fc5.ko|qmi_helpers.ko|qrtr.ko|qrtr-mhi.ko|wlan_firmware_service.ko|wlan.ko|zram.ko)
             echo "   [drop] ${mod_name} (excluded)"
@@ -157,27 +189,25 @@ find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | sort | while read -r module
             ;;
     esac
 
-    if grep -Fq "${mod_name}" "${VKB_LIST}"; then
+    if grep -Fq "${mod_name}" "${VKB_LIST}"; then 
         DEST="${DLKM_STAGING}/vendor_kernel_boot"
         echo "   [VKB]  ${mod_name}"
-    elif grep -Fq "${mod_name}" "${VDLKM_LIST}"; then
+    elif grep -Fq "${mod_name}" "${VDLKM_LIST}"; then 
         DEST="${DLKM_STAGING}/vendor_dlkm"
         echo "   [V_DLKM] ${mod_name}"
-    else
+    else 
         DEST="${DLKM_STAGING}/system_dlkm"
         echo "   [S_DLKM] ${mod_name}"
     fi
-
-    # copy and strip
+    
     cp "${module}" "${DEST}/lib/modules/${KERNEL_VER}/"
     "${STRIP_BIN}" --strip-debug "${DEST}/lib/modules/${KERNEL_VER}/${mod_name}"
 done
 
-# === injection for KSU ===
-if [ -n "$KSU_KO_PATH" ] && [ -f "$KSU_KO_PATH" ]; then
-    echo "   [inject] Found built KSU module: $(basename "$KSU_KO_PATH")"
-    cp "$KSU_KO_PATH" "${DLKM_STAGING}/system_dlkm/lib/modules/${KERNEL_VER}/"
-    echo "      -> Copied to system_dlkm"
+# === injection for KernelSU ===
+if [ -n "$KSU_KO_INJECT_PATH" ] && [ -f "$KSU_KO_INJECT_PATH" ]; then
+    echo "   [inject] Injecting KSU: $(basename "$KSU_KO_INJECT_PATH")"
+    cp "$KSU_KO_INJECT_PATH" "${DLKM_STAGING}/system_dlkm/lib/modules/${KERNEL_VER}/"
 fi
 
 #####
@@ -190,7 +220,6 @@ echo "========================================"
 echo "Re-signing Modules"
 echo "========================================"
 
-# check if required files exist
 SIGN_FILE="${OUT_DIR}/scripts/sign-file"
 SIGN_KEY="${OUT_DIR}/certs/signing_key.pem"
 SIGN_CERT="${OUT_DIR}/certs/signing_key.x509"
@@ -201,12 +230,12 @@ if [ -f "${SIGN_FILE}" ] && [ -f "${SIGN_KEY}" ] && [ -f "${SIGN_CERT}" ]; then
         "${SIGN_FILE}" sha1 "${SIGN_KEY}" "${SIGN_CERT}" "${module}"
     done
 else
-    echo "   [WARN] signing tools or keys not found. skipping module signing."
+    echo "   [WARN] signing tools/keys missing. skipping."
 fi
 
 #####
 #####
-# generate dependency maps & modules.load
+# generate dependency maps
 #####
 #####
 
@@ -218,23 +247,17 @@ SRC_METADATA="${MODULES_STAGING_DIR}/lib/modules/${KERNEL_VER}"
 for part in vendor_kernel_boot vendor_dlkm system_dlkm; do
     echo "   [meta] Processing ${part}..."
     TARGET_DIR="${DLKM_STAGING}/${part}/lib/modules/${KERNEL_VER}"
-
-    # copy metadata
+    
     cp "${SRC_METADATA}/modules.builtin" "${TARGET_DIR}/"
     cp "${SRC_METADATA}/modules.builtin.modinfo" "${TARGET_DIR}/"
     cp "${SRC_METADATA}/modules.order" "${TARGET_DIR}/"
-
-    # generate modules.load
+    
     (
         cd "${TARGET_DIR}"
         find . -maxdepth 1 -name "*.ko" | sed 's|^\./||' | sort > modules.load
-        echo "      Generated modules.load with $(wc -l < modules.load) entries."
     )
 
-    # run depmod
     depmod -b "${DLKM_STAGING}/${part}" "${KERNEL_VER}"
-
-    # cleanup
     rm -f "${TARGET_DIR}/modules.alias" "${TARGET_DIR}/modules.symbols"
 done
 
@@ -248,31 +271,19 @@ echo "========================================"
 echo "Packing Images"
 echo "========================================"
 
-# erofs for dlkms
 echo "   [img] Building vendor_dlkm.img..."
 mkfs.erofs -z lz4hc "${OUT_DIR}/vendor_dlkm.img" "${DLKM_STAGING}/vendor_dlkm"
 
 echo "   [img] Building system_dlkm.img..."
 mkfs.erofs -z lz4hc "${OUT_DIR}/system_dlkm.img" "${DLKM_STAGING}/system_dlkm"
 
-# AVB Hash Footer
-# this is critical for the partitions to mount
 if command -v python3 &>/dev/null && [ -f "${AVBTOOL}" ]; then
-    echo "   [avb] Signing vendor_dlkm..."
-    python3 "${AVBTOOL}" add_hashtree_footer \
-        --partition_name vendor_dlkm \
-        --hash_algorithm sha256 \
-        --image "${OUT_DIR}/vendor_dlkm.img"
-
-    echo "   [avb] Signing system_dlkm..."
-    python3 "${AVBTOOL}" add_hashtree_footer \
-        --partition_name system_dlkm \
-        --hash_algorithm sha256 \
-        --image "${OUT_DIR}/system_dlkm.img"
+    echo "   [avb] Signing images..."
+    python3 "${AVBTOOL}" add_hashtree_footer --partition_name vendor_dlkm --hash_algorithm sha256 --image "${OUT_DIR}/vendor_dlkm.img"
+    python3 "${AVBTOOL}" add_hashtree_footer --partition_name system_dlkm --hash_algorithm sha256 --image "${OUT_DIR}/system_dlkm.img"
 else
-    echo "   [WARN] avbtool not found! Images might not mount."
+    echo "   [WARN] avbtool not found."
 fi
-
 
 # combine dtbs
 echo "   [dtb] Combining DTBs..."

@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
-# === Usage: ./ksu.sh [standard|next] ===
 VARIANT="${1:-standard}"
 
-# === Config ===
-# We assume this is run from the kernel root (set by auto.sh)
+# config
 KERNEL_DIR="$(pwd)"
 OUT_DIR="${KERNEL_DIR}/out"
 LLVM_DIR="$(realpath ../linux-x86/clang-r487747c/bin)/"
@@ -22,12 +20,14 @@ rm -rf drivers/kernelsu
 if [ "$VARIANT" == "next" ]; then
     echo "   [setup] Fetching KernelSU-Next..."
     curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+elif ["$VARIANT" == "wild" ]; then
+    echo "   [setup] Fetching KernelSU-Wild..." 
+    curl -LSs "https://raw.githubusercontent.com/WildKernels/Wild_KSU/wild/kernel/setup.sh" | bash -
 else
     echo "   [setup] Fetching KernelSU (Standard)..."
     curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 fi
 
-# Patch modpost.c
 echo "   [patch] Patching modpost.c for unexported symbols..."
 MODPOST_C="scripts/mod/modpost.c"
 # Save backup
@@ -42,7 +42,6 @@ make -j"$(nproc)" "${TOOL_ARGS[@]}" O="${OUT_DIR}" modules_prepare
 
 # Configure Module
 echo "   [conf] Forcing CONFIG_KSU=m..."
-# Ensure default is 'm' in source to prevent "y" overrides
 sed -i '/config KSU/,/help/{s/default y/default m/}' drivers/kernelsu/Kconfig
 
 # Append to .config just in case
@@ -61,7 +60,6 @@ make -j"$(nproc)" "${TOOL_ARGS[@]}" O="${OUT_DIR}" M=drivers/kernelsu modules
 if [ -f "${OUT_DIR}/drivers/kernelsu/kernelsu.ko" ]; then
     "${LLVM_DIR}llvm-strip" --strip-debug "${OUT_DIR}/drivers/kernelsu/kernelsu.ko"
 
-    # Rename if using Next to avoid confusion, or keep standard name
     TARGET_NAME="kernelsu.ko"
     if [ "$VARIANT" == "next" ]; then TARGET_NAME="kernelsu_next.ko"; fi
 

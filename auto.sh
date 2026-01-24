@@ -102,8 +102,9 @@ if [[ "$build_ksu_choice" =~ ^[Yy]$ ]]; then
 
     echo "   1) KernelSU (Standard)"
     echo "   2) KernelSU-Next"
-    echo "   3) Both"
-    read -p "   Select variant [1/2/3]: " ksu_variant
+    echo "   3) KernelSU-Wild"
+    echo "   4) Both"
+    read -p "   Select variant [1/2/3/4]: " ksu_variant
 
     case "$ksu_variant" in
         1)
@@ -117,6 +118,11 @@ if [[ "$build_ksu_choice" =~ ^[Yy]$ ]]; then
             KSU_KO_INJECT_PATH="${KSU_SAVE_DIR}/kernelsu_next.ko"
             ;;
         3)
+            bash "${KSU_SCRIPT}" wild
+            cp "${OUT_DIR}/kernelsu_wild.ko" "${KSU_SAVE_DIR}/kernelsu_wild.ko"
+            KSU_KO_INJECT_PATH="${KSU_SAVE_DIR}/kernelsu_wild.ko"
+            ;;
+        4)
             echo "   [both] Building Standard..."
             bash "${KSU_SCRIPT}" standard
             cp "${OUT_DIR}/kernelsu.ko" "${KSU_SAVE_DIR}/kernelsu.ko"
@@ -125,28 +131,13 @@ if [[ "$build_ksu_choice" =~ ^[Yy]$ ]]; then
             bash "${KSU_SCRIPT}" next
             cp "${OUT_DIR}/kernelsu_next.ko" "${KSU_SAVE_DIR}/kernelsu_next.ko"
 
+            echo "   [both] Building Wild..."
+            bash "${KSU_SCRIPT}" wild
+            cp "${OUT_DIR}/kernelsu_wild.ko" "${KSU_SAVE_DIR}/kernelsu_wild.ko"
+
             echo "   ---------------------------------"
-            echo "   Both modules saved to: ${KSU_SAVE_DIR}/"
-            echo "   Which one do you want to INJECT into system_dlkm?"
-            echo "   1) Standard (kernelsu.ko)"
-            echo "   2) Next (kernelsu_next.ko)"
-            echo "   n) None"
-            read -p "   Select injection [1/2/n]: " inject_choice
-            
-            if [ "$inject_choice" == "1" ]; then
-                KSU_KO_INJECT_PATH="${KSU_SAVE_DIR}/kernelsu.ko"
-            elif [ "$inject_choice" == "2" ]; then
-                KSU_KO_INJECT_PATH="${KSU_SAVE_DIR}/kernelsu_next.ko"
-            fi
-            ;;
-        *)
-            echo "   [WARN] Invalid selection. Skipping KSU."
-            ;;
+            echo "   All modules saved to: ${KSU_SAVE_DIR}/"
     esac
-    
-    if [ -n "$KSU_KO_INJECT_PATH" ]; then
-        echo "   [info] Selected for injection: $(basename "$KSU_KO_INJECT_PATH")"
-    fi
 else
     echo "   [info] Skipping KernelSU."
 fi
@@ -203,12 +194,6 @@ find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | sort | while read -r module
     cp "${module}" "${DEST}/lib/modules/${KERNEL_VER}/"
     "${STRIP_BIN}" --strip-debug "${DEST}/lib/modules/${KERNEL_VER}/${mod_name}"
 done
-
-# === injection for KernelSU ===
-if [ -n "$KSU_KO_INJECT_PATH" ] && [ -f "$KSU_KO_INJECT_PATH" ]; then
-    echo "   [inject] Injecting KSU: $(basename "$KSU_KO_INJECT_PATH")"
-    cp "$KSU_KO_INJECT_PATH" "${DLKM_STAGING}/system_dlkm/lib/modules/${KERNEL_VER}/"
-fi
 
 #####
 #####

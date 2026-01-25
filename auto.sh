@@ -32,6 +32,14 @@ AVBTOOL="${ROM_DIR}/external/avb/avbtool.py"
 if [ ! -f "${AVBTOOL}" ]; then AVBTOOL="avbtool"; fi
 STRIP_BIN="${LLVM_DIR}llvm-strip"
 
+# fec binary for avbtool
+FEC_BIN="${HOME}/fec-x86_64"
+if [ -f "$FEC_BIN" ]; then
+    mkdir -p /tmp/avb-tools
+    ln -sf "$FEC_BIN" /tmp/avb-tools/fec
+    export PATH="/tmp/avb-tools:$PATH"
+fi
+
 # build lists
 BUILD_CONFIG_DIR="${KERNEL_DIR}/build_config"
 VKB_LIST="${BUILD_CONFIG_DIR}/vendor_kernel_boot.txt"

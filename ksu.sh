@@ -14,7 +14,7 @@ echo "   [KSU] Building Variant: ${VARIANT}"
 echo "========================================"
 
 # cleanup existing
-rm -rf drivers/kernelsu KernelSU
+rm -rf drivers/kernelsu KernelSU Wild_KSU KernelSU-Next
 git restore arch/arm64/configs/gs201_defconfig drivers/Kconfig drivers/Makefile scripts/mod/modpost.c
 
 if [ "$VARIANT" == "next" ]; then
@@ -60,7 +60,7 @@ fi
 
 # cleanup
 echo "   [clean] Restoring source tree..."
-rm -rf drivers/kernelsu
+rm -rf drivers/kernelsu KernelSU Wild_KSU KernelSU-Next
 mv "${MODPOST_C}.bak" "$MODPOST_C"
 git checkout drivers/Kconfig drivers/Makefile 2>/dev/null || true
 

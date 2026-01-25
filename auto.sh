@@ -6,7 +6,7 @@ set -e
 
 # kernel tree
 ROOT_DIR="$(pwd)"
-KERNEL_DIR="${ROOT_DIR}/aosp"
+KERNEL_DIR="${ROOT_DIR}/gs201"
 
 # out dirs
 OUT_DIR="${KERNEL_DIR}/out"
@@ -31,14 +31,6 @@ MKDTBOIMG="${ROM_DIR}/system/tools/mkbootimg/mkdtboimg.py"
 AVBTOOL="${ROM_DIR}/external/avb/avbtool.py"
 if [ ! -f "${AVBTOOL}" ]; then AVBTOOL="avbtool"; fi
 STRIP_BIN="${LLVM_DIR}llvm-strip"
-
-# fec binary for avbtool
-FEC_BIN="${HOME}/fec-x86_64"
-if [ -f "$FEC_BIN" ]; then
-    mkdir -p /tmp/avb-tools
-    ln -sf "$FEC_BIN" /tmp/avb-tools/fec
-    export PATH="/tmp/avb-tools:$PATH"
-fi
 
 # build lists
 BUILD_CONFIG_DIR="${KERNEL_DIR}/build_config"
@@ -111,7 +103,7 @@ if [[ "$build_ksu_choice" =~ ^[Yy]$ ]]; then
     echo "   1) KernelSU (Standard)"
     echo "   2) KernelSU-Next"
     echo "   3) KernelSU-Wild"
-    echo "   4) Both"
+    echo "   4) All"
     read -p "   Select variant [1/2/3/4]: " ksu_variant
 
     case "$ksu_variant" in
@@ -272,8 +264,8 @@ mkfs.erofs -z lz4hc "${OUT_DIR}/system_dlkm.img" "${DLKM_STAGING}/system_dlkm"
 
 if command -v python3 &>/dev/null && [ -f "${AVBTOOL}" ]; then
     echo "   [avb] Signing images..."
-    python3 "${AVBTOOL}" add_hashtree_footer --partition_name vendor_dlkm --hash_algorithm sha256 --image "${OUT_DIR}/vendor_dlkm.img"
-    python3 "${AVBTOOL}" add_hashtree_footer --partition_name system_dlkm --hash_algorithm sha256 --image "${OUT_DIR}/system_dlkm.img"
+    python3 "${AVBTOOL}" add_hashtree_footer --partition_name vendor_dlkm --hash_algorithm sha256 --do_not_generate_fec --image "${OUT_DIR}/vendor_dlkm.img"
+    python3 "${AVBTOOL}" add_hashtree_footer --partition_name system_dlkm --hash_algorithm sha256 --do_not_generate_fec --image "${OUT_DIR}/system_dlkm.img"
 else
     echo "   [WARN] avbtool not found."
 fi

@@ -21,7 +21,7 @@ if [ "$VARIANT" == "next" ]; then
     echo "   [setup] Fetching KernelSU-Next..."
     curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
 elif [ "$VARIANT" == "wild" ]; then
-    echo "   [setup] Fetching KernelSU-Wild..." 
+    echo "   [setup] Fetching KernelSU-Wild..."
     curl -LSs "https://raw.githubusercontent.com/WildKernels/Wild_KSU/wild/kernel/setup.sh" | bash -
 else
     echo "   [setup] Fetching KernelSU (Standard)..."
@@ -46,8 +46,13 @@ make -j"$(nproc)" "${TOOL_ARGS[@]}" O="${OUT_DIR}" M=drivers/kernelsu modules
 if [ -f "${OUT_DIR}/drivers/kernelsu/kernelsu.ko" ]; then
     "${LLVM_DIR}llvm-strip" --strip-debug "${OUT_DIR}/drivers/kernelsu/kernelsu.ko"
 
-    TARGET_NAME="kernelsu.ko"
-    if [ "$VARIANT" == "next" ]; then TARGET_NAME="kernelsu_next.ko"; fi
+        TARGET_NAME="kernelsu.ko"
+        if [ "$VARIANT" == "next" ]; then
+            TARGET_NAME="kernelsu_next.ko"
+        elif [ "$VARIANT" == "wild" ]; then
+            TARGET_NAME="kernelsu_wild.ko"
+        fi
+
 
     cp "${OUT_DIR}/drivers/kernelsu/kernelsu.ko" "${OUT_DIR}/${TARGET_NAME}"
     echo "SUCCESS: Generated ${OUT_DIR}/${TARGET_NAME}"

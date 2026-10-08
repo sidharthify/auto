@@ -25,7 +25,7 @@ LLVM_DIR="${ROOT_DIR}/linux-x86/clang-r487747c/bin/"
 TOOL_ARGS=(LLVM="${LLVM_DIR}")
 MAGISKBOOT="${ROOT_DIR}/magiskboot"
 MKBOOTIMG="${ROM_DIR}/system/tools/mkbootimg/mkbootimg.py"
-MKDTBOIMG="${ROM_DIR}/system/tools/mkbootimg/mkdtboimg.py"
+MKDTIMG="${ROM_DIR}/prebuilts/kernel-build-tools/linux-x86/bin/mkdtimg"
 
 # avbtool
 AVBTOOL="${ROM_DIR}/external/avb/avbtool.py"
@@ -38,6 +38,11 @@ VKB_LIST="${BUILD_CONFIG_DIR}/vendor_kernel_boot.txt"
 VDLKM_LIST="${BUILD_CONFIG_DIR}/vendor_dlkm.txt"
 SDLKM_LIST="${BUILD_CONFIG_DIR}/system_dlkm.txt"
 BLOCKLIST="${BUILD_CONFIG_DIR}/blocklist.txt"
+
+# dtbo overlays, packed in the same order kleaf uses
+DTBO_DTS_DIR="google-devices/pantah/dts"
+DTBO_DIR="${OUT_DIR}/${DTBO_DTS_DIR}"
+DTBO_ORDER="${KERNEL_DIR}/google-devices/pantah/constants.bzl"
 
 #####
 #####
@@ -60,6 +65,7 @@ echo "   [build] Compiling kernel..."
 make -j"$(nproc)" "${TOOL_ARGS[@]}" kernelrelease
 make -j"$(nproc)" "${TOOL_ARGS[@]}"
 make -j"$(nproc)" "${TOOL_ARGS[@]}" dtbs
+make -j"$(nproc)" "${TOOL_ARGS[@]}" dtstree="${DTBO_DTS_DIR}" dtbs
 
 if [ ! -f "${IMAGE_LZ4}" ]; then
     echo "ERROR: image.lz4 missing!"
@@ -281,10 +287,14 @@ echo "      Source: ${DTB_SOURCE}"
 cat "${DTB_SOURCE}"/*.dtb > "${OUT_DIR}/combined.dtb"
 
 # generate dtbo
-if [ -f "${MKDTBOIMG}" ]; then
+# the bootloader picks overlays by board_id/board_rev, so read them from each
+# overlay like kleaf does instead of leaving them zeroed
+if [ -x "${MKDTIMG}" ]; then
     echo "   [dtbo] Generating dtbo.img..."
-    DTBO_FILES=$(find "${DTB_SOURCE}" -name "*.dtbo")
-    if [ -n "${DTBO_FILES}" ]; then python3 "${MKDTBOIMG}" create "${OUT_DIR}/dtbo.img" ${DTBO_FILES}; fi
+    DTBO_FILES=$(sed -n '/^PANTAH_DTBOS = \[/,/^\]/p' "${DTBO_ORDER}" | grep -o '[A-Za-z0-9_.-]*\.dtbo' | sed "s|^|${DTBO_DIR}/|")
+    "${MKDTIMG}" create "${OUT_DIR}/dtbo.img" --page_size=4096 --id=/:board_id --rev=/:board_rev ${DTBO_FILES}
+else
+    echo "   [WARN] mkdtimg not found."
 fi
 
 # vendor ramdisk and boot image
@@ -360,7 +370,10 @@ safe_copy "${IMAGE_LZ4}" "${PREBUILT_KERNEL_DIR}/"
 if [ -d "${DTB_SOURCE}" ]; then
     echo "   [sync] DTB files..."
     cp -r "${DTB_SOURCE}"/*.dtb "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
-    cp -r "${DTB_SOURCE}"/*.dtbo "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
+fi
+if [ -d "${DTBO_DIR}" ]; then
+    echo "   [sync] DTBO files..."
+    cp -r "${DTBO_DIR}"/*.dtbo "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
 fi
 
 # sync modules

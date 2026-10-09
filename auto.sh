@@ -84,6 +84,9 @@ fi
 # build modules
 echo "   [build] Compiling modules..."
 make -j"$(nproc)" "${TOOL_ARGS[@]}" modules
+# modules_install never removes anything, so modules dropped from the
+# build would otherwise keep getting shipped from earlier runs
+rm -rf "${MODULES_STAGING_DIR}"
 make -j"$(nproc)" "${TOOL_ARGS[@]}" INSTALL_MOD_PATH="${MODULES_STAGING_DIR}" modules_install
 
 #####

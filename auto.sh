@@ -92,7 +92,16 @@ echo "========================================"
 echo "KernelSU Selection"
 echo "========================================"
 
-read -p "   Do you want to build KernelSU? (y/n): " build_ksu_choice
+# KSU=n|1|2|3|4 answers the prompts below for non-interactive builds
+ksu_variant=""
+if [ -n "${KSU}" ]; then
+    case "${KSU}" in
+        [Nn]) build_ksu_choice="n" ;;
+        *) build_ksu_choice="y"; ksu_variant="${KSU}" ;;
+    esac
+else
+    read -p "   Do you want to build KernelSU? (y/n): " build_ksu_choice
+fi
 KSU_KO_INJECT_PATH=""
 KSU_SAVE_DIR="${ROOT_DIR}/KSU"
 KSU_SCRIPT="${ROOT_DIR}/ksu.sh"
@@ -106,11 +115,13 @@ if [[ "$build_ksu_choice" =~ ^[Yy]$ ]]; then
     # create save dir
     mkdir -p "${KSU_SAVE_DIR}"
 
-    echo "   1) KernelSU (Standard)"
-    echo "   2) KernelSU-Next"
-    echo "   3) KernelSU-Wild"
-    echo "   4) All"
-    read -p "   Select variant [1/2/3/4]: " ksu_variant
+    if [ -z "${ksu_variant}" ]; then
+        echo "   1) KernelSU (Standard)"
+        echo "   2) KernelSU-Next"
+        echo "   3) KernelSU-Wild"
+        echo "   4) All"
+        read -p "   Select variant [1/2/3/4]: " ksu_variant
+    fi
 
     case "$ksu_variant" in
         1)

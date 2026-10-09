@@ -20,6 +20,10 @@ IMAGE_RAW="${OUT_DIR}/arch/arm64/boot/Image"
 ROM_DIR="${HOME}/yaap"
 PREBUILT_KERNEL_DIR="${ROM_DIR}/device/google/pantah-kernels/6.1"
 
+# user@host in the kernel version, no matter which machine builds it
+export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-sidharthify}"
+export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-nixos}"
+
 # tools
 LLVM_DIR="${ROOT_DIR}/linux-x86/clang-r487747c/bin/"
 TOOL_ARGS=(LLVM="${LLVM_DIR}")

@@ -8,6 +8,11 @@ set -e
 ROOT_DIR="$(pwd)"
 KERNEL_DIR="${ROOT_DIR}/gs201"
 
+# kernel version
+KERNEL_MAJOR=$(sed -n 's/^VERSION = *//p' "${KERNEL_DIR}/Makefile" | head -n1)
+KERNEL_MINOR=$(sed -n 's/^PATCHLEVEL = *//p' "${KERNEL_DIR}/Makefile" | head -n1)
+KERNEL_BRANCH="${KERNEL_MAJOR}.${KERNEL_MINOR}"
+
 # out dirs
 OUT_DIR="${KERNEL_DIR}/out"
 MODULES_STAGING_DIR="${OUT_DIR}/modules_staging"
@@ -18,14 +23,24 @@ IMAGE_RAW="${OUT_DIR}/arch/arm64/boot/Image"
 
 # AOSP
 ROM_DIR="${HOME}/yaap"
-PREBUILT_KERNEL_DIR="${ROM_DIR}/device/google/pantah-kernels/6.1"
+PREBUILT_KERNEL_DIR="${ROM_DIR}/device/google/pantah-kernels/${KERNEL_BRANCH}"
+if [ ! -d "${PREBUILT_KERNEL_DIR}" ]; then
+    mkdir -p "${PREBUILT_KERNEL_DIR}"
+fi
 
 # user@host in the kernel version, no matter which machine builds it
 export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-sidharthify}"
 export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-nixos}"
 
 # tools
-LLVM_DIR="${ROOT_DIR}/linux-x86/clang-r487747c/bin/"
+if [ "${KERNEL_BRANCH}" = "6.12" ]; then
+    LLVM_DIR="${ROOT_DIR}/linux-x86/clang-r536225/bin/"
+    if [ ! -d "${LLVM_DIR}" ]; then
+        LLVM_DIR="${HOME}/kernel612/linux-x86/clang-r536225/bin/"
+    fi
+else
+    LLVM_DIR="${ROOT_DIR}/linux-x86/clang-r487747c/bin/"
+fi
 TOOL_ARGS=(LLVM="${LLVM_DIR}")
 MAGISKBOOT="${ROOT_DIR}/magiskboot"
 MKBOOTIMG="${ROM_DIR}/system/tools/mkbootimg/mkbootimg.py"
@@ -44,9 +59,15 @@ SDLKM_LIST="${BUILD_CONFIG_DIR}/system_dlkm.txt"
 BLOCKLIST="${BUILD_CONFIG_DIR}/blocklist.txt"
 
 # dtbo overlays, packed in the same order kleaf uses
-DTBO_DTS_DIR="google-devices/pantah/dts"
-DTBO_DIR="${OUT_DIR}/${DTBO_DTS_DIR}"
-DTBO_ORDER="${KERNEL_DIR}/google-devices/pantah/constants.bzl"
+if [ "${KERNEL_BRANCH}" = "6.12" ]; then
+    DTBO_DTS_DIR="google-modules/soc/gs/arch/arm64/boot/dts/google"
+    DTBO_DIR="${OUT_DIR}/${DTBO_DTS_DIR}"
+    DTBO_ORDER="${KERNEL_DIR}/google-modules/soc/gs/arch/arm64/boot/dts/google/Makefile"
+else
+    DTBO_DTS_DIR="google-devices/pantah/dts"
+    DTBO_DIR="${OUT_DIR}/${DTBO_DTS_DIR}"
+    DTBO_ORDER="${KERNEL_DIR}/google-devices/pantah/constants.bzl"
+fi
 
 #####
 #####
@@ -55,7 +76,7 @@ DTBO_ORDER="${KERNEL_DIR}/google-devices/pantah/constants.bzl"
 #####
 
 echo "========================================"
-echo "Starting Kernel Build"
+echo "Starting Kernel Build (${KERNEL_BRANCH})"
 echo "========================================"
 
 cd "${KERNEL_DIR}"
@@ -69,7 +90,10 @@ echo "   [build] Compiling kernel..."
 make -j"$(nproc)" "${TOOL_ARGS[@]}" kernelrelease
 make -j"$(nproc)" "${TOOL_ARGS[@]}"
 make -j"$(nproc)" "${TOOL_ARGS[@]}" dtbs
-make -j"$(nproc)" "${TOOL_ARGS[@]}" dtstree="${DTBO_DTS_DIR}" dtbs
+if [ "${KERNEL_BRANCH}" != "6.12" ]; then
+    make -j"$(nproc)" "${TOOL_ARGS[@]}" dtstree="${DTBO_DTS_DIR}" dtbs
+fi
+make -j"$(nproc)" "${TOOL_ARGS[@]}" Image.lz4
 
 if [ ! -f "${IMAGE_LZ4}" ]; then
     echo "ERROR: image.lz4 missing!"
@@ -198,7 +222,7 @@ find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | sort | while read -r module
 
     # exclude list
     case "${mod_name}" in
-        btpower.ko|cnss2.ko|cnss_nl.ko|cnss_plat_ipc_qmi_svc.ko|cnss_prealloc.ko|cnss_utils.ko|drv2624.ko|goodix_brl_touch.ko|google_wlan_mac.ko|mhi.ko|ufs-pixel-fips140.ko|panel-samsung-s6e3fc3-l10.ko|panel-samsung-s6e3fc5.ko|qmi_helpers.ko|qrtr.ko|qrtr-mhi.ko|wlan_firmware_service.ko|wlan.ko|zram.ko)
+        btpower.ko|cnss2.ko|cnss_nl.ko|cnss_plat_ipc_qmi_svc.ko|cnss_prealloc.ko|cnss_utils.ko|drv2624.ko|goodix_brl_touch.ko|google_wlan_mac.ko|mhi.ko|ufs-pixel-fips140.ko|panel-samsung-s6e3fc3-l10.ko|panel-samsung-s6e3fc5.ko|qmi_helpers.ko|qrtr.ko|qrtr-mhi.ko|wlan_firmware_service.ko|wlan.ko|zram.ko|*test*.ko|*kunit*.ko|regmap-ram.ko|regmap-raw-ram.ko)
             echo "   [drop] ${mod_name} (excluded)"
             continue
             ;;
@@ -296,20 +320,30 @@ fi
 
 # combine dtbs
 echo "   [dtb] Combining DTBs..."
-DTB_PATHS=("${OUT_DIR}/arch/arm64/boot/dts/google/gs201" "${OUT_DIR}/google-devices/gs201/dts" "${OUT_DIR}/arch/arm64/boot/dts/google")
-DTB_SOURCE=""
-for path in "${DTB_PATHS[@]}"; do
-    if [ -d "$path" ] && compgen -G "$path/*.dtb" > /dev/null; then DTB_SOURCE="$path"; break; fi
-done
-echo "      Source: ${DTB_SOURCE}"
-cat "${DTB_SOURCE}"/*.dtb > "${OUT_DIR}/combined.dtb"
+if [ "${KERNEL_BRANCH}" = "6.12" ]; then
+    DTB_SOURCE="${OUT_DIR}/google-modules/soc/gs/arch/arm64/boot/dts/google"
+    echo "      Source: ${DTB_SOURCE}"
+    cat "${DTB_SOURCE}/gs201-a0.dtb" "${DTB_SOURCE}/gs201-b0.dtb" > "${OUT_DIR}/combined.dtb"
+else
+    DTB_PATHS=("${OUT_DIR}/arch/arm64/boot/dts/google/gs201" "${OUT_DIR}/google-devices/gs201/dts" "${OUT_DIR}/arch/arm64/boot/dts/google")
+    DTB_SOURCE=""
+    for path in "${DTB_PATHS[@]}"; do
+        if [ -d "$path" ] && compgen -G "$path/*.dtb" > /dev/null; then DTB_SOURCE="$path"; break; fi
+    done
+    echo "      Source: ${DTB_SOURCE}"
+    cat "${DTB_SOURCE}"/*.dtb > "${OUT_DIR}/combined.dtb"
+fi
 
 # generate dtbo
 # the bootloader picks overlays by board_id/board_rev, so read them from each
 # overlay like kleaf does instead of leaving them zeroed
 if [ -x "${MKDTIMG}" ]; then
     echo "   [dtbo] Generating dtbo.img..."
-    DTBO_FILES=$(sed -n '/^PANTAH_DTBOS = \[/,/^\]/p' "${DTBO_ORDER}" | grep -o '[A-Za-z0-9_.-]*\.dtbo' | sed "s|^|${DTBO_DIR}/|")
+    if [ "${KERNEL_BRANCH}" = "6.12" ]; then
+        DTBO_FILES=$(sed -n '/^gs201_pantah_overlays :=/,/^[a-zA-Z0-9_][a-zA-Z0-9_]* *[:?+=]/p' "${DTBO_ORDER}" | grep -o '[A-Za-z0-9_.-]*\.dtbo' | sed "s|^|${DTBO_DIR}/|")
+    else
+        DTBO_FILES=$(sed -n '/^PANTAH_DTBOS = \[/,/^\]/p' "${DTBO_ORDER}" | grep -o '[A-Za-z0-9_.-]*\.dtbo' | sed "s|^|${DTBO_DIR}/|")
+    fi
     "${MKDTIMG}" create "${OUT_DIR}/dtbo.img" --page_size=4096 --id=/:board_id --rev=/:board_rev ${DTBO_FILES}
 else
     echo "   [WARN] mkdtimg not found."
@@ -333,11 +367,15 @@ echo "Repacking boot.img"
 echo "========================================"
 
 if [ ! -f "${MAGISKBOOT}" ]; then echo "magiskboot not found!"; exit 1; fi
-if [ ! -f "${PREBUILT_KERNEL_DIR}/boot.img" ]; then echo "source boot.img not found!"; exit 1; fi
+SOURCE_BOOT="${PREBUILT_KERNEL_DIR}/boot.img"
+if [ ! -f "${SOURCE_BOOT}" ]; then
+    SOURCE_BOOT="${ROM_DIR}/device/google/pantah-kernels/6.1/boot.img"
+fi
+if [ ! -f "${SOURCE_BOOT}" ]; then echo "source boot.img not found!"; exit 1; fi
 
 rm -rf "${OUT_DIR}/boot_repack" && mkdir -p "${OUT_DIR}/boot_repack"
 echo "   [copy] Fetching stock boot.img..."
-cp "${PREBUILT_KERNEL_DIR}/boot.img" "${OUT_DIR}/boot_repack/"
+cp "${SOURCE_BOOT}" "${OUT_DIR}/boot_repack/boot.img"
 
 (
     cd "${OUT_DIR}/boot_repack"
@@ -387,11 +425,19 @@ safe_copy "${IMAGE_LZ4}" "${PREBUILT_KERNEL_DIR}/"
 # sync dtbs
 if [ -d "${DTB_SOURCE}" ]; then
     echo "   [sync] DTB files..."
-    cp -r "${DTB_SOURCE}"/*.dtb "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
+    if [ "${KERNEL_BRANCH}" = "6.12" ]; then
+        cp -f "${DTB_SOURCE}/gs201-a0.dtb" "${DTB_SOURCE}/gs201-b0.dtb" "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
+    else
+        cp -r "${DTB_SOURCE}"/*.dtb "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
+    fi
 fi
 if [ -d "${DTBO_DIR}" ]; then
     echo "   [sync] DTBO files..."
-    cp -r "${DTBO_DIR}"/*.dtbo "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
+    if [ "${KERNEL_BRANCH}" = "6.12" ]; then
+        cp -f ${DTBO_FILES} "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
+    else
+        cp -r "${DTBO_DIR}"/*.dtbo "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
+    fi
 fi
 
 # sync modules
@@ -404,7 +450,11 @@ find "${DLKM_STAGING}" -name "*.ko" -print -exec cp -fv {} "${PREBUILT_KERNEL_DI
 # sync insmod configs
 echo "   [sync] Insmod configs..."
 for variant in cheetah cloudripper panther ravenclaw; do
-    find "${KERNEL_DIR}" -name "init.insmod.${variant}.cfg" -exec cp -f {} "${PREBUILT_KERNEL_DIR}/" \; 2>/dev/null || true
+    if find "${KERNEL_DIR}" -name "init.insmod.${variant}.cfg" 2>/dev/null | grep -q .; then
+        find "${KERNEL_DIR}" -name "init.insmod.${variant}.cfg" -exec cp -f {} "${PREBUILT_KERNEL_DIR}/" \; 2>/dev/null || true
+    elif [ -f "${ROM_DIR}/device/google/pantah-kernels/6.1/init.insmod.${variant}.cfg" ]; then
+        cp -f "${ROM_DIR}/device/google/pantah-kernels/6.1/init.insmod.${variant}.cfg" "${PREBUILT_KERNEL_DIR}/"
+    fi
 done
 
 # sync metadata

@@ -40,7 +40,8 @@ make -j"$(nproc)" "${TOOL_ARGS[@]}" O="${OUT_DIR}" modules_prepare
 
 # build
 echo "   [build] Compiling ${VARIANT}..."
-make -j"$(nproc)" "${TOOL_ARGS[@]}" O="${OUT_DIR}" M=drivers/kernelsu modules
+make -j"$(nproc)" "${TOOL_ARGS[@]}" O="${OUT_DIR}" M=drivers/kernelsu \
+    KCFLAGS="-I${KERNEL_DIR}/drivers/kernelsu -I${KERNEL_DIR}/drivers/kernelsu/include" modules
 
 # strip n move
 if [ -f "${OUT_DIR}/drivers/kernelsu/kernelsu.ko" ]; then

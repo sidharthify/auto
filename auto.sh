@@ -42,6 +42,22 @@ else
     LLVM_DIR="${ROOT_DIR}/linux-x86/clang-r487747c/bin/"
 fi
 TOOL_ARGS=(LLVM="${LLVM_DIR}")
+
+# android16-6.12 builds ashmem in Rust, and Rust with MODVERSIONS needs
+# gendwarfksyms. These have to be on every make command line, or kbuild sees
+# the system rustc and quietly drops CONFIG_RUST.
+if [ "${KERNEL_BRANCH}" = "6.12" ]; then
+    RUST_DIR="${ROOT_DIR}/linux-x86/rust-prebuilts/linux-x86/1.82.0.p2"
+    ELFUTILS_DIR="${ROOT_DIR}/host/elfutils"
+    export LIBCLANG_PATH="${LLVM_DIR}../lib"
+    TOOL_ARGS+=(
+        RUSTC="${RUST_DIR}/bin/rustc"
+        HOSTRUSTC="${RUST_DIR}/bin/rustc"
+        BINDGEN="${ROM_DIR}/prebuilts/clang-tools/linux-x86/bin/bindgen"
+        HOSTCFLAGS="-I${ELFUTILS_DIR}/include"
+        HOSTLDFLAGS="-L${ELFUTILS_DIR}/lib -Wl,-rpath,${ELFUTILS_DIR}/lib"
+    )
+fi
 MAGISKBOOT="${ROOT_DIR}/magiskboot"
 MKBOOTIMG="${ROM_DIR}/system/tools/mkbootimg/mkbootimg.py"
 MKDTIMG="${ROM_DIR}/prebuilts/kernel-build-tools/linux-x86/bin/mkdtimg"

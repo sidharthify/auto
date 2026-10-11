@@ -224,11 +224,18 @@ find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | sort | while read -r module
 
     # exclude list
     case "${mod_name}" in
-        btpower.ko|cnss2.ko|cnss_nl.ko|cnss_plat_ipc_qmi_svc.ko|cnss_prealloc.ko|cnss_utils.ko|drv2624.ko|goodix_brl_touch.ko|google_wlan_mac.ko|mhi.ko|ufs-pixel-fips140.ko|panel-samsung-s6e3fc3-l10.ko|panel-samsung-s6e3fc5.ko|qmi_helpers.ko|qrtr.ko|qrtr-mhi.ko|wlan_firmware_service.ko|wlan.ko|zram.ko)
+        btpower.ko|cnss2.ko|cnss_nl.ko|cnss_plat_ipc_qmi_svc.ko|cnss_prealloc.ko|cnss_utils.ko|drv2624.ko|goodix_brl_touch.ko|google_wlan_mac.ko|mhi.ko|ufs-pixel-fips140.ko|panel-samsung-s6e3fc3-l10.ko|panel-samsung-s6e3fc5.ko|qmi_helpers.ko|qrtr.ko|qrtr-mhi.ko|wlan_firmware_service.ko|wlan.ko)
             echo "   [drop] ${mod_name} (excluded)"
             continue
             ;;
     esac
+
+    # 6.1 ships Pixel's zram_gs instead of the GKI zram. 6.12 has no zram_gs,
+    # so it keeps the GKI one.
+    if [ "${KERNEL_BRANCH}" != "6.12" ] && [ "${mod_name}" = "zram.ko" ]; then
+        echo "   [drop] ${mod_name} (excluded)"
+        continue
+    fi
 
     # the 6.12 GKI config also builds kunit suites and other test modules;
     # only ship the ones the partition lists ask for, like on 6.1

@@ -93,7 +93,9 @@ make -j"$(nproc)" "${TOOL_ARGS[@]}" dtbs
 if [ "${KERNEL_BRANCH}" != "6.12" ]; then
     make -j"$(nproc)" "${TOOL_ARGS[@]}" dtstree="${DTBO_DTS_DIR}" dtbs
 fi
-make -j"$(nproc)" "${TOOL_ARGS[@]}" Image.lz4
+if [ "${KERNEL_BRANCH}" = "6.12" ]; then
+    make -j"$(nproc)" "${TOOL_ARGS[@]}" Image.lz4
+fi
 
 if [ ! -f "${IMAGE_LZ4}" ]; then
     echo "ERROR: image.lz4 missing!"
@@ -222,11 +224,24 @@ find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | sort | while read -r module
 
     # exclude list
     case "${mod_name}" in
-        btpower.ko|cnss2.ko|cnss_nl.ko|cnss_plat_ipc_qmi_svc.ko|cnss_prealloc.ko|cnss_utils.ko|drv2624.ko|goodix_brl_touch.ko|google_wlan_mac.ko|mhi.ko|ufs-pixel-fips140.ko|panel-samsung-s6e3fc3-l10.ko|panel-samsung-s6e3fc5.ko|qmi_helpers.ko|qrtr.ko|qrtr-mhi.ko|wlan_firmware_service.ko|wlan.ko|zram.ko|*test*.ko|*kunit*.ko|regmap-ram.ko|regmap-raw-ram.ko)
+        btpower.ko|cnss2.ko|cnss_nl.ko|cnss_plat_ipc_qmi_svc.ko|cnss_prealloc.ko|cnss_utils.ko|drv2624.ko|goodix_brl_touch.ko|google_wlan_mac.ko|mhi.ko|ufs-pixel-fips140.ko|panel-samsung-s6e3fc3-l10.ko|panel-samsung-s6e3fc5.ko|qmi_helpers.ko|qrtr.ko|qrtr-mhi.ko|wlan_firmware_service.ko|wlan.ko|zram.ko)
             echo "   [drop] ${mod_name} (excluded)"
             continue
             ;;
     esac
+
+    # the 6.12 GKI config also builds kunit suites and other test modules;
+    # only ship the ones the partition lists ask for, like on 6.1
+    if [ "${KERNEL_BRANCH}" = "6.12" ]; then
+        case "${mod_name}" in
+            *test*.ko|*kunit*.ko|regmap-ram.ko|regmap-raw-ram.ko)
+                if ! grep -Fqx "${mod_name}" "${VKB_LIST}" "${VDLKM_LIST}" "${SDLKM_LIST}"; then
+                    echo "   [drop] ${mod_name} (unlisted test module)"
+                    continue
+                fi
+                ;;
+        esac
+    fi
 
     if grep -Fq "${mod_name}" "${VKB_LIST}"; then 
         DEST="${DLKM_STAGING}/vendor_kernel_boot"
@@ -322,8 +337,9 @@ fi
 echo "   [dtb] Combining DTBs..."
 if [ "${KERNEL_BRANCH}" = "6.12" ]; then
     DTB_SOURCE="${OUT_DIR}/google-modules/soc/gs/arch/arm64/boot/dts/google"
+    DTB_FILES=$(sed -n 's/^gs201_pantah_dtbs := //p' "${DTBO_ORDER}" | sed "s|[^ ]*|${DTB_SOURCE}/&|g")
     echo "      Source: ${DTB_SOURCE}"
-    cat "${DTB_SOURCE}/gs201-a0.dtb" "${DTB_SOURCE}/gs201-b0.dtb" > "${OUT_DIR}/combined.dtb"
+    cat ${DTB_FILES} > "${OUT_DIR}/combined.dtb"
 else
     DTB_PATHS=("${OUT_DIR}/arch/arm64/boot/dts/google/gs201" "${OUT_DIR}/google-devices/gs201/dts" "${OUT_DIR}/arch/arm64/boot/dts/google")
     DTB_SOURCE=""
@@ -426,7 +442,7 @@ safe_copy "${IMAGE_LZ4}" "${PREBUILT_KERNEL_DIR}/"
 if [ -d "${DTB_SOURCE}" ]; then
     echo "   [sync] DTB files..."
     if [ "${KERNEL_BRANCH}" = "6.12" ]; then
-        cp -f "${DTB_SOURCE}/gs201-a0.dtb" "${DTB_SOURCE}/gs201-b0.dtb" "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
+        cp -f ${DTB_FILES} "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
     else
         cp -r "${DTB_SOURCE}"/*.dtb "${PREBUILT_KERNEL_DIR}/" 2>/dev/null || true
     fi

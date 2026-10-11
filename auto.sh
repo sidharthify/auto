@@ -323,14 +323,36 @@ for part in vendor_kernel_boot vendor_dlkm system_dlkm; do
     cp "${SRC_METADATA}/modules.builtin.modinfo" "${TARGET_DIR}/"
     cp "${SRC_METADATA}/modules.order" "${TARGET_DIR}/"
     
+    PART_LIST=""
+    case "${part}" in
+        vendor_kernel_boot) PART_LIST="${VKB_LIST}" ;;
+        vendor_dlkm) PART_LIST="${VDLKM_LIST}" ;;
+        system_dlkm) PART_LIST="${SDLKM_LIST}" ;;
+    esac
     (
         cd "${TARGET_DIR}"
-        find . -maxdepth 1 -name "*.ko" | sed 's|^\./||' | sort > modules.load
+        if [ -n "${PART_LIST}" ] && [ -f "${PART_LIST}" ]; then
+            awk -F/ '{print $NF}' "${PART_LIST}" | while read -r m; do
+                if [ -f "${m}" ]; then echo "${m}"; fi
+            done > modules.load
+            find . -maxdepth 1 -name "*.ko" | sed 's|^\./||' | sort | while read -r m; do
+                grep -Fqx "${m}" modules.load || echo "${m}"
+            done >> modules.load
+        else
+            find . -maxdepth 1 -name "*.ko" | sed 's|^\./||' | sort > modules.load
+        fi
     )
 
     depmod -b "${DLKM_STAGING}/${part}" "${KERNEL_VER}"
     rm -f "${TARGET_DIR}/modules.alias" "${TARGET_DIR}/modules.symbols"
 done
+
+if [ -d "${DLKM_STAGING}/vendor_kernel_boot/lib/modules/${KERNEL_VER}" ]; then
+    echo "   [meta] Mirroring vendor_kernel_boot to flat /lib/modules..."
+    for item in "${DLKM_STAGING}/vendor_kernel_boot/lib/modules/${KERNEL_VER}"/*; do
+        ln -sf "${KERNEL_VER}/$(basename "${item}")" "${DLKM_STAGING}/vendor_kernel_boot/lib/modules/$(basename "${item}")" 2>/dev/null || true
+    done
+fi
 
 #####
 #####
@@ -431,6 +453,20 @@ cp "${SOURCE_BOOT}" "${OUT_DIR}/boot_repack/boot.img"
 
 mv -f "${OUT_DIR}/boot_repack/new-boot.img" "${OUT_DIR}/boot.img"
 
+if [ -f "${OUT_DIR}/boot.img" ] && [ -x "${MAGISKBOOT}" ]; then
+    echo "   [boot] Creating boot-nopkvm.img..."
+    rm -rf "${OUT_DIR}/boot_nopkvm_repack" && mkdir -p "${OUT_DIR}/boot_nopkvm_repack"
+    cp "${OUT_DIR}/boot.img" "${OUT_DIR}/boot_nopkvm_repack/boot.img"
+    (
+        cd "${OUT_DIR}/boot_nopkvm_repack"
+        "${MAGISKBOOT}" unpack -h boot.img >/dev/null 2>&1
+        sed -i 's/^cmdline=.*/cmdline=kvm-arm.mode=nvhe/' header
+        "${MAGISKBOOT}" repack boot.img >/dev/null 2>&1
+    )
+    mv -f "${OUT_DIR}/boot_nopkvm_repack/new-boot.img" "${OUT_DIR}/boot-nopkvm.img"
+    rm -rf "${OUT_DIR}/boot_nopkvm_repack"
+fi
+
 #####
 #####
 # sync to prebuilts
@@ -452,6 +488,10 @@ safe_copy() {
 
 # sync images
 safe_copy "${OUT_DIR}/boot.img" "${PREBUILT_KERNEL_DIR}/"
+safe_copy "${OUT_DIR}/boot-nopkvm.img" "${PREBUILT_KERNEL_DIR}/"
+safe_copy "${DLKM_STAGING}/vendor_kernel_boot/lib/modules/${KERNEL_VER}/modules.load" "${PREBUILT_KERNEL_DIR}/vendor_kernel_boot.modules.load"
+safe_copy "${DLKM_STAGING}/vendor_dlkm/lib/modules/${KERNEL_VER}/modules.load" "${PREBUILT_KERNEL_DIR}/vendor_dlkm.modules.load"
+safe_copy "${DLKM_STAGING}/system_dlkm/lib/modules/${KERNEL_VER}/modules.load" "${PREBUILT_KERNEL_DIR}/system_dlkm.modules.load"
 safe_copy "${OUT_DIR}/vendor_dlkm.img" "${PREBUILT_KERNEL_DIR}/"
 safe_copy "${OUT_DIR}/system_dlkm.img" "${PREBUILT_KERNEL_DIR}/"
 safe_copy "${OUT_DIR}/vendor_kernel_boot.img" "${PREBUILT_KERNEL_DIR}/"

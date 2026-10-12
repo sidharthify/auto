@@ -347,12 +347,6 @@ for part in vendor_kernel_boot vendor_dlkm system_dlkm; do
     rm -f "${TARGET_DIR}/modules.alias" "${TARGET_DIR}/modules.symbols"
 done
 
-if [ -d "${DLKM_STAGING}/vendor_kernel_boot/lib/modules/${KERNEL_VER}" ]; then
-    echo "   [meta] Mirroring vendor_kernel_boot to flat /lib/modules..."
-    for item in "${DLKM_STAGING}/vendor_kernel_boot/lib/modules/${KERNEL_VER}"/*; do
-        ln -sf "${KERNEL_VER}/$(basename "${item}")" "${DLKM_STAGING}/vendor_kernel_boot/lib/modules/$(basename "${item}")" 2>/dev/null || true
-    done
-fi
 
 #####
 #####
@@ -411,8 +405,17 @@ else
 fi
 
 # vendor ramdisk and boot image
+# Lay the ramdisk out like the ROM's own vendor_kernel_boot: the modules as
+# real files in a flat /lib/modules, absolute paths in modules.dep, everything
+# owned by root and no "." entry (that one would hand / to the build user).
 echo "   [ramdisk] Creating vendor ramdisk..."
-( cd "${DLKM_STAGING}/vendor_kernel_boot" && find . | cpio -H newc -o 2>/dev/null | lz4 -l -12 --favor-decSpeed > "${OUT_DIR}/vendor_ramdisk.cpio.lz4" )
+VKB_SRC="${DLKM_STAGING}/vendor_kernel_boot/lib/modules/${KERNEL_VER}"
+VKB_RD="${OUT_DIR}/vendor_ramdisk_staging"
+rm -rf "${VKB_RD}"
+mkdir -p "${VKB_RD}/lib/modules"
+cp "${VKB_SRC}"/*.ko "${VKB_SRC}/modules.load" "${VKB_SRC}/modules.softdep" "${VKB_RD}/lib/modules/"
+sed -E 's#([^ :]+\.ko)#/lib/modules/\1#g' "${VKB_SRC}/modules.dep" > "${VKB_RD}/lib/modules/modules.dep"
+( cd "${VKB_RD}" && find . -mindepth 1 | sed 's|^\./||' | sort | cpio -H newc -o -R 0:0 --quiet | lz4 -l -12 --favor-decSpeed > "${OUT_DIR}/vendor_ramdisk.cpio.lz4" )
 
 echo "   [boot] Creating vendor_kernel_boot.img..."
 python3 "${MKBOOTIMG}" --vendor_ramdisk "${OUT_DIR}/vendor_ramdisk.cpio.lz4" --dtb "${OUT_DIR}/combined.dtb" --header_version 4 --vendor_boot "${OUT_DIR}/vendor_kernel_boot.img"

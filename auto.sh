@@ -234,6 +234,11 @@ echo "========================================"
 echo "Sorting & Stripping Modules"
 echo "========================================"
 
+# true if the list names this module; entries are paths or bare file names
+in_list() {
+    awk -F/ -v m="$1" '$NF == m { found = 1 } END { exit !found }' "$2"
+}
+
 find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | sort | while read -r module; do
     mod_name=$(basename "${module}")
     if grep -q "^${mod_name}" "${BLOCKLIST}" 2>/dev/null; then continue; fi
@@ -266,10 +271,10 @@ find "${MODULES_STAGING_DIR}" -type f -name "*.ko" | sort | while read -r module
         esac
     fi
 
-    if grep -Fq "${mod_name}" "${VKB_LIST}"; then 
+    if in_list "${mod_name}" "${VKB_LIST}"; then
         DEST="${DLKM_STAGING}/vendor_kernel_boot"
         echo "   [VKB]  ${mod_name}"
-    elif grep -Fq "${mod_name}" "${VDLKM_LIST}"; then 
+    elif in_list "${mod_name}" "${VDLKM_LIST}"; then
         DEST="${DLKM_STAGING}/vendor_dlkm"
         echo "   [V_DLKM] ${mod_name}"
     else 

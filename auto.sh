@@ -120,13 +120,43 @@ while read -r module; do
     MODULE_PATH["$(basename "${module}")"]="${module}"
 done < <(find "${MODULES_STAGING_DIR}" -type f -name "*.ko")
 
-# copy the listed modules to a partition, stripped and signed with the key
-# the kernel was built with; anything not on a list is not shipped
+# what each module needs loaded before it, by file name, from the
+# modules.dep of the build
+declare -A MODULE_DEPS
+while IFS=: read -r module deps; do
+    names=""
+    for dep in ${deps}; do
+        names+=" $(basename "${dep}")"
+    done
+    MODULE_DEPS["$(basename "${module}")"]="${names}"
+done < "${MODULES_STAGING_DIR}/lib/modules/${KERNEL_VER}/modules.dep"
+
+# the listed modules plus everything they depend on, so that a partition
+# loaded on its own, like vendor_boot in first stage init, is complete
+module_closure() {
+    local -A seen=()
+    local -a queue
+    local mod dep
+    read -r -a queue <<< "$(cat "$@" | awk '!seen[$0]++' | tr '\n' ' ')"
+    while [ ${#queue[@]} -gt 0 ]; do
+        mod="${queue[0]}"
+        queue=("${queue[@]:1}")
+        [ -n "${seen[${mod}]}" ] && continue
+        seen["${mod}"]=1
+        echo "${mod}"
+        for dep in ${MODULE_DEPS[${mod}]}; do
+            queue+=("${dep}")
+        done
+    done
+}
+
+# copy modules to a partition, stripped and signed with the key the kernel
+# was built with; anything not on a list is not shipped
 stage_modules() {
     local part="$1"; shift
     local dest="${DLKM_STAGING}/${part}/lib/modules/${KERNEL_VER}"
     local mod
-    for mod in $(cat "$@" | awk '!seen[$0]++'); do
+    for mod in "$@"; do
         if [ -z "${MODULE_PATH[${mod}]}" ]; then
             echo "   [WARN] ${mod} is listed for ${part} but was not built"
             continue
@@ -140,9 +170,9 @@ stage_modules() {
 
 # vendor_boot carries the recovery modules as well, since yupei boots
 # recovery with the vendor_boot ramdisk
-stage_modules vendor_boot "${VB_LIST}" "${VB_RECOVERY_LIST}"
-stage_modules vendor_dlkm "${VDLKM_LIST}"
-stage_modules system_dlkm "${SDLKM_LIST}"
+stage_modules vendor_boot $(module_closure "${VB_LIST}" "${VB_RECOVERY_LIST}")
+stage_modules vendor_dlkm $(cat "${VDLKM_LIST}")
+stage_modules system_dlkm $(cat "${SDLKM_LIST}")
 
 #####
 #####

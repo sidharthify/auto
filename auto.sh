@@ -283,6 +283,7 @@ export_uapi "${TECHPACK_DIR}/eva-kernel/include/uapi" .
 export_uapi "${TECHPACK_DIR}/synx-kernel/include/uapi" .
 export_uapi "${TECHPACK_DIR}/mm-drivers/hw_fence/include/uapi" .
 export_uapi "${TECHPACK_DIR}/dataipa/drivers/platform/msm/include/uapi" .
+export_uapi "${TECHPACK_DIR}/touch-driver/include/uapi" .
 
 # bionic defines these itself, and the kernel versions clash with it
 rm -f "${HDR_STAGING}/include/linux/sched/types.h" "${HDR_STAGING}/include/linux/eventpoll.h"

@@ -12,7 +12,7 @@ MODULES_STAGING_DIR="${OUT_DIR}/modules_staging"
 DEFCONFIG="yupei_defconfig"
 
 # AOSP
-ROM_DIR="${HOME}/pixelos"
+ROM_DIR="${ROM_DIR:-${HOME}/pixelos}"
 PREBUILT_KERNEL_DIR="${PREBUILT_KERNEL_DIR:-${ROM_DIR}/device/xiaomi/yupei-kernel}"
 mkdir -p "${PREBUILT_KERNEL_DIR}"
 

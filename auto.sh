@@ -244,6 +244,13 @@ find "${TECHPACK_DTB_DIR}" -name "*.dtbo" -exec cp {} "${DT_STAGING}/techpack/" 
 python3 "${MERGE_DTBS}" --base "${DT_STAGING}/base" --techpack "${DT_STAGING}/techpack" \
     --out "${DT_STAGING}/merged" --loglevel warn
 
+for dt in ${BASE_DTBS} ${BOARD_DTBOS}; do
+    if cmp -s "${DT_STAGING}/base/${dt}" "${DT_STAGING}/merged/${dt}"; then
+        echo "   [error] No techpack overlay got merged into ${dt}"
+        exit 1
+    fi
+done
+
 python3 "${MKDTBOIMG}" create "${OUT_DIR}/dtbo.img" --page_size=4096 \
     $(for dt in ${BOARD_DTBOS}; do echo "${DT_STAGING}/merged/${dt}"; done)
 

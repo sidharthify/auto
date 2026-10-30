@@ -57,15 +57,17 @@ BOARD_DTBOS="yupei-sm8735-overlay.dtbo"
 #####
 #####
 
-if [ ! -x "${DTC_DIR}/fdtoverlaymerge" ]; then
+if [ ! -x "${DTC_DIR}/fdtoverlaymerge" ] || [ ! -x "${DTC_DIR}/fdtput" ]; then
     echo "   [tools] Building fdtoverlaymerge..."
     rm -rf "${DTC_DIR}"
     git init -q "${DTC_DIR}"
     git -C "${DTC_DIR}" fetch -q --depth 1 "${DTC_REPO}" "${DTC_REV}"
     git -C "${DTC_DIR}" checkout -q FETCH_HEAD
-    make -C "${DTC_DIR}" -j"$(nproc)" NO_PYTHON=1 NO_YAML=1 dtc fdtget fdtoverlay fdtoverlaymerge >/dev/null
+    make -C "${DTC_DIR}" -j"$(nproc)" NO_PYTHON=1 NO_YAML=1 dtc fdtget fdtput fdtoverlay fdtoverlaymerge >/dev/null
 fi
 export PATH="${DTC_DIR}:${PATH}"
+# the dtc tools link against the libfdt they were built with
+export LD_LIBRARY_PATH="${DTC_DIR}/libfdt${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
 #####
 #####

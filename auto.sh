@@ -63,7 +63,8 @@ if [ ! -x "${DTC_DIR}/fdtoverlaymerge" ] || [ ! -x "${DTC_DIR}/fdtput" ]; then
     git init -q "${DTC_DIR}"
     git -C "${DTC_DIR}" fetch -q --depth 1 "${DTC_REPO}" "${DTC_REV}"
     git -C "${DTC_DIR}" checkout -q FETCH_HEAD
-    make -C "${DTC_DIR}" -j"$(nproc)" NO_PYTHON=1 NO_YAML=1 dtc fdtget fdtput fdtoverlay fdtoverlaymerge >/dev/null
+    make -C "${DTC_DIR}" -j"$(nproc)" NO_PYTHON=1 NO_YAML=1 EXTRA_CFLAGS=-Wno-error \
+        dtc fdtget fdtput fdtoverlay fdtoverlaymerge >/dev/null
 fi
 export PATH="${DTC_DIR}:${PATH}"
 # the dtc tools link against the libfdt they were built with

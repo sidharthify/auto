@@ -437,7 +437,8 @@ def create_adjacency(dtbs):
 def parse_tech_dt_files(folder):
 	dtbs = []
 	for root, dirs, files in os.walk(folder):
-		for filename in files:
+		dirs.sort()
+		for filename in sorted(files):
 			if os.path.splitext(filename)[1] in ['.dtbo','.dtb']:
 				filepath = os.path.join(root, filename)
 				dt = DeviceTree(filepath)
@@ -454,7 +455,8 @@ def parse_tech_dt_files(folder):
 def parse_dt_files(dt_folder):
 	devicetrees = []
 	for root, dirs, files in os.walk(dt_folder):
-		for filename in files:
+		dirs.sort()
+		for filename in sorted(files):
 			if os.path.splitext(filename)[1] not in ['.dtb', '.dtbo']:
 				continue
 			filepath = os.path.join(root, filename)
